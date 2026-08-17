@@ -1,7 +1,8 @@
 """Habeas verifier-as-oracle: M-274 Handbook + 8 CFR 274a.2 rules engine.
 
-Sources: USCIS M-274 Handbook for Employers, 8 CFR 274a.2, eCFR (verify exact
-citations in P1). Deterministic rules over the synthetic packet per
+Sources: USCIS M-274 Handbook for Employers, 8 CFR 274a.2 (eCFR/govinfo,
+CFR-2025-title8-vol1, current as of 2026-08-17 verification pass — see
+docs/DECISIONS.md). Deterministic rules over the synthetic packet per
 CONTRACTS.md §3.
 """
 
@@ -38,6 +39,7 @@ _SEV = {
     ViolationType.EDITION_WRONG: Severity.MEDIUM,
     ViolationType.CATEGORY_MISMATCH: Severity.MEDIUM,
     ViolationType.DATA_INCONSISTENT: Severity.LOW,
+    ViolationType.REMOTE_EXAM_INVALID: Severity.HIGH,
 }
 
 
@@ -71,17 +73,18 @@ def verify(form: FormI9) -> Verdict:
     if form.edition not in VALID_EDITIONS:
         out.append(_v(ViolationType.EDITION_WRONG, "SECTION1.EDITION",
                       f"edition {form.edition}", "2023-08-01 or 2025-01-20",
-                      "M-274 Ch.1 / 8 CFR 274a.2(a)",
+                      "M-274 Ch.1 / 8 CFR 274a.2(a)(2)",
                       "use the current I-9 edition"))
     if not form.section1_complete:
         out.append(_v(ViolationType.FIELD_INCOMPLETE, "SECTION1",
                       "required fields missing", "all Section 1 fields completed",
-                      "8 CFR 274a.2(b)(1)(i)", "complete Section 1"))
+                      "8 CFR 274a.2(b)(1)(i)(A)", "complete Section 1"))
     if form.name_section1 != form.name_section2 or form.dob_section1 != form.dob_section2:
         out.append(_v(ViolationType.DATA_INCONSISTENT, "SECTION1/2",
                       "name or DOB differs across sections",
                       "identical name and DOB in Sections 1 and 2",
-                      "M-274 Ch.4", "reconcile the data-entry"))
+                      "M-274 Ch.4 (Completing Section 2) / Ch.9 (Correcting Errors)",
+                      "reconcile the data-entry"))
 
     has_a = any(d.list_type == "A" for d in form.documents)
     has_b = any(d.list_type == "B" for d in form.documents)
@@ -99,14 +102,14 @@ def verify(form: FormI9) -> Verdict:
             out.append(_v(ViolationType.DOC_INVALID, f"SECTION2.{d.doc_type}",
                           f"{d.doc_type} presented as List {d.list_type}",
                           f"List {valid_list or 'unknown'}",
-                          "M-274 Ch.4 / 8 CFR 274a.2(b)(1)(v)",
+                          "M-274 Ch.4 / 8 CFR 274a.2(b)(1)(v)(A)-(C)",
                           "reclassify or replace the document"))
             continue
         if d.list_type in ("A", "B") and d.expiration:
             if dt.date.fromisoformat(d.expiration) < s2:
                 out.append(_v(ViolationType.DOC_EXPIRED, f"SECTION2.{d.doc_type}",
                               f"expired {d.expiration}", "unexpired as of Section 2",
-                              "8 CFR 274a.2(b)(1)(v)(A)", "obtain an unexpired document"))
+                              "8 CFR 274a.2(b)(1)(v)", "obtain an unexpired document"))
 
     hire = dt.date.fromisoformat(form.hire_date)
     deadline = _add_business_days(hire, 3)
@@ -127,7 +130,21 @@ def verify(form: FormI9) -> Verdict:
         out.append(_v(ViolationType.CATEGORY_MISMATCH, "SECTION1.ATTESTATION",
                       f"invalid category '{form.habeasation_category}'",
                       "citizen | noncitizen_national | lpr | authorized",
-                      "8 CFR 274a.2(b)(1)(i)(A)", "correct the habeasation"))
+                      "8 CFR 274a.2(b)(3)", "correct the habeasation"))
+
+    if form.remote_examination:
+        if not form.everify_enrolled:
+            out.append(_v(ViolationType.REMOTE_EXAM_INVALID, "SECTION2.REMOTE_EXAM",
+                          "remote examination used without E-Verify enrollment",
+                          "employer enrolled in E-Verify in good standing",
+                          "8 CFR 274a.2(b)(1)(ix)",
+                          "revert to in-person physical examination or enroll in E-Verify"))
+        if not form.remote_copies_retained:
+            out.append(_v(ViolationType.REMOTE_EXAM_INVALID, "SECTION2.REMOTE_EXAM",
+                          "clear copies of remotely examined documents not retained",
+                          "front/back copies retained per the alternative procedure",
+                          "8 CFR 274a.2(b)(1)(ix)",
+                          "retain and store copies of the examined documents"))
 
     return Verdict(verdict="PASS" if not out else "FLAG", violations=out)
 

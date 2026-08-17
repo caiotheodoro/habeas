@@ -36,6 +36,7 @@ class ViolationType(str, Enum):
     EDITION_WRONG = "EDITION_WRONG"
     CATEGORY_MISMATCH = "CATEGORY_MISMATCH"
     DATA_INCONSISTENT = "DATA_INCONSISTENT"
+    REMOTE_EXAM_INVALID = "REMOTE_EXAM_INVALID"
 
 
 VIOLATION_WEIGHTS: dict[ViolationType, float] = {
@@ -48,6 +49,7 @@ VIOLATION_WEIGHTS: dict[ViolationType, float] = {
     ViolationType.EDITION_WRONG: 0.6,
     ViolationType.CATEGORY_MISMATCH: 0.6,
     ViolationType.DATA_INCONSISTENT: 0.3,
+    ViolationType.REMOTE_EXAM_INVALID: 1.0,
 }
 
 
@@ -71,6 +73,9 @@ class FormI9(BaseModel):
     name_section2: str
     dob_section1: str
     dob_section2: str
+    remote_examination: bool = False    # DHS alternative procedure (eff. 2023-08-01)
+    everify_enrolled: bool = False      # employer E-Verify enrollment, good standing
+    remote_copies_retained: bool = True  # clear copies of remotely-examined docs retained
 
 
 class Violation(BaseModel):
@@ -95,3 +100,4 @@ class Task(BaseModel):
     image_form_sha256: str
     expected: Verdict
     signature: str
+    ocr_noise_level: float = 0.0  # rendering-layer only; excluded from signature

@@ -23,17 +23,22 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
 
 - **P0 scaffold**: complete — README, CONTRACTS, forge (schema, rules-engine
   oracle, generator, score, contamination, cli), model, cloud, docs.
-- **Verified green**: `make validate` (5 tests; every violation type
-  reachable); 400-task pilot (298 FLAG), split overlap 0, contamination
-  leak-probe ROC clean.
-- **P1+ not started**: citation verification, remote-examination branch,
-  golden benchmark, dataset builder, SFT, RLVR, head-to-head.
+- **P1 oracle**: complete — citations verified against eCFR/govinfo 8 CFR
+  274a.2 (CFR-2025-title8-vol1); remote-examination (E-Verify) branch live
+  (`REMOTE_EXAM_INVALID`, 8 CFR 274a.2(b)(1)(ix)); OCR-noise augmentation
+  live (rendering-layer only, `Task.ocr_noise_level`). See DECISIONS.md.
+- **Verified green**: `make validate` (8 tests; every violation type
+  reachable, including REMOTE_EXAM_INVALID); 400-task pilot (287 FLAG, 82
+  remote-exam packets), split overlap 0, contamination leak-probe ROC clean.
+- **P2+ not started**: golden benchmark, dataset builder, SFT, RLVR,
+  head-to-head.
 
 ## Next actions
 
-1. **P1**: verify exact citations and both I-9 editions (2023-08-01,
-   2025-01-20) against M-274 / eCFR; add the remote-examination (E-Verify)
-   branch; OCR-noise augmentation.
+1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
+   subsections, all verified) were cross-referenced via search excerpts, not
+   a full chapter-by-chapter PDF read — worth a follow-up pass against the
+   current M-274 PDF directly if a discrepancy surfaces in practice.
 2. **P2**: build golden benchmark (seed 777) via the CLI.
 3. **P3**: dataset builder + **smoke LoRA on Modal** to validate Qwen3.8-27B
    DeltaNet fine-tuning tooling (shared gate; specula is the lead).
