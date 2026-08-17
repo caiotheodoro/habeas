@@ -44,6 +44,43 @@ def test_deterministic_same_seed():
     assert verify(t1.form) == verify(t2.form)
 
 
+def test_remote_exam_gate():
+    rng = random.Random(99)
+    form = generate.generate_packet(rng, [])
+    form.remote_examination = True
+    form.everify_enrolled = True
+    form.remote_copies_retained = True
+    assert oracle_gate(form, set())
+    assert verify(form).verdict == "PASS"
+
+    rng2 = random.Random(99)
+    seen = set()
+    for _ in range(200):
+        t = generate.task(rng2, seed=99, n_violations=1)
+        seen |= {v.type for v in t.expected.violations}
+        assert oracle_gate(t.form, {v.type for v in t.expected.violations})
+        if ViolationType.REMOTE_EXAM_INVALID in seen:
+            break
+    assert ViolationType.REMOTE_EXAM_INVALID in seen
+
+
+def test_ocr_noise_does_not_affect_oracle():
+    rng_clean, rng_noisy = random.Random(55), random.Random(55)
+    t_clean = generate.task(rng_clean, seed=55, n_violations=1, difficulty=0.0)
+    t_noisy = generate.task(rng_noisy, seed=55, n_violations=1, difficulty=1.0)
+    assert t_clean.form == t_noisy.form
+    assert t_clean.signature == t_noisy.signature
+    assert t_clean.expected == t_noisy.expected
+    assert t_noisy.ocr_noise_level > t_clean.ocr_noise_level
+
+
+def test_ocr_noise_produces_valid_image():
+    rng = random.Random(3)
+    t = generate.task(rng, seed=3, n_violations=0, difficulty=1.0)
+    assert t.ocr_noise_level > 0
+    assert len(t.image_form_sha256) == 64
+
+
 def test_contamination_roc():
     rng = random.Random(11)
     train = [generate.task(rng, seed=7, n_violations=1) for _ in range(20)]

@@ -11,8 +11,11 @@ Specs: `README.md` (atomic spec), `CONTRACTS.md` (fixed benchmark contracts),
 ```
 forge/    habeas_forge: seeded I-9 packet generator + M-274/8 CFR rules
           engine (verifier-as-oracle) + contamination monitor + CLI
-model/    habeas_model: dataset builder (stub), benchmark eval (stub),
-          schema.py = model-output contract + parser + SYSTEM_PROMPT
+model/    habeas_model: dataset_builder.py (forge Task -> SFT chat-format
+          JSONL, base64 rendered page per task), benchmark_eval.py
+          (Provider adapter protocol + concurrent/checkpointed eval +
+          forge-oracle scoring), schema.py = model-output contract +
+          parser + SYSTEM_PROMPT
 cloud/    Modal app (L4 24GB, QLoRA) + Dockerfile + GCP spot script
 eval/     deterministic golden harness notes
 docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
@@ -23,21 +26,42 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
 
 - **P0 scaffold**: complete — README, CONTRACTS, forge (schema, rules-engine
   oracle, generator, score, contamination, cli), model, cloud, docs.
-- **Verified green**: `make validate` (5 tests; every violation type
-  reachable); 400-task pilot (298 FLAG), split overlap 0, contamination
-  leak-probe ROC clean.
-- **P1+ not started**: citation verification, remote-examination branch,
-  golden benchmark, dataset builder, SFT, RLVR, head-to-head.
+- **P1 oracle**: complete — citations verified against eCFR/govinfo 8 CFR
+  274a.2 (CFR-2025-title8-vol1); remote-examination (E-Verify) branch live
+  (`REMOTE_EXAM_INVALID`, 8 CFR 274a.2(b)(1)(ix)); OCR-noise augmentation
+  live (rendering-layer only, `Task.ocr_noise_level`). See DECISIONS.md.
+- **Verified green**: `make validate` (8 tests; every violation type
+  reachable, including REMOTE_EXAM_INVALID); 400-task pilot (287 FLAG, 82
+  remote-exam packets), split overlap 0, contamination leak-probe ROC clean.
+- **P2 golden benchmark**: complete — `data/golden.jsonl` (seed 777, 1000
+  tasks, 728 FLAG), zero overlap vs train/val confirmed. Fixed a generator
+  entropy bug found in the process (see DECISIONS.md).
+- **P3 dataset builder**: scaffolding complete —
+  `habeas_model.dataset_builder.build_dataset()` (also a small CLI: `python
+  -m habeas_model.dataset_builder build --tasks-file ... --out ...`) turns
+  forge Task JSONL into chat-format SFT records (system/user/assistant +
+  base64 rendered page); image rendering is seeded from the task signature
+  for reproducibility. `habeas_model.benchmark_eval` adds a minimal
+  `Provider` adapter protocol, concurrent + JSONL-checkpointed (resumable)
+  eval, and scoring via `habeas_forge.score`. `model/tests/` added (6
+  tests green) — needed `uv sync --extra dev` in `model/` (heavy deps:
+  torch/transformers/trl/peft) and `click`+`numpy` added to
+  `model/pyproject.toml`. **Smoke LoRA on Modal not run** — deferred,
+  shared gate, specula is the lead repo for that.
+- **P4 not started**: SFT, RLVR, head-to-head.
 
 ## Next actions
 
-1. **P1**: verify exact citations and both I-9 editions (2023-08-01,
-   2025-01-20) against M-274 / eCFR; add the remote-examination (E-Verify)
-   branch; OCR-noise augmentation.
-2. **P2**: build golden benchmark (seed 777) via the CLI.
-3. **P3**: dataset builder + **smoke LoRA on Modal** to validate Qwen3.8-27B
-   DeltaNet fine-tuning tooling (shared gate; specula is the lead).
-4. Wire a provider adapter into `benchmark_eval._predict_one` for head-to-head.
+1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
+   subsections, all verified) were cross-referenced via search excerpts, not
+   a full chapter-by-chapter PDF read — worth a follow-up pass against the
+   current M-274 PDF directly if a discrepancy surfaces in practice.
+2. **P3 remainder**: wire a real provider (local vLLM/MLX or frontier API)
+   behind the `Provider` protocol in `benchmark_eval.py` for actual
+   head-to-head runs (current tests use an in-memory test double); wire
+   `cloud/modal_train.py`'s `train()` to actually consume the `data: bytes`
+   param (currently unused — hardcoded `train_dataset=[]`) once the smoke
+   LoRA gate clears.
 
 ## Bootstrap (fresh agent)
 
