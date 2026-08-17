@@ -37,6 +37,43 @@ only with measured evidence.
   methodology without any privacy surface.
 - Evidence: generate.py (placeholder names/numbers).
 
+## 2026-08-17 — P3 — Dataset builder + benchmark_eval provider adapter
+- Decision: `habeas_model.dataset_builder` reads forge `Task` JSONL and
+  emits chat-format SFT records (system = `SYSTEM_PROMPT`, user = form/doc
+  facts + base64 rendered page, assistant = oracle-derived `VerdictOut`
+  JSON); `habeas_model.benchmark_eval` adds a minimal `Provider` protocol
+  (`complete(system, user, image_b64) -> str`), concurrent
+  (`ThreadPoolExecutor`) + JSONL-checkpointed eval (`run_eval`, skips
+  already-scored `task_id`s on re-run — resumable per CONTRACTS.md §6), and
+  scoring via `habeas_forge.score.score_predictions`/`summarize`. Both
+  modules import `habeas_forge` via `sys.path` insertion (`model/tests/
+  conftest.py`), matching forge's own existing test-time pattern, since
+  both packages are `[tool.uv] package = false` (no build backend, so no
+  normal path-dependency wiring is possible between them).
+- Rationale: HANDOFF.md's "wire a provider adapter into
+  benchmark_eval._predict_one" next-action required the module to exist
+  first; scaffolding it against the current train/val data now (rather than
+  waiting on the smoke-LoRA gate) lets both be validated independently.
+  Image rendering during dataset-build/eval is seeded from
+  `int(task.signature[:16], 16)` (not a fresh `random.Random()`) so the same
+  task always renders identical bytes — required for CONTRACTS.md §6's
+  "identical inputs" guarantee across eval runs/models; found and fixed
+  during test-writing (a non-seeded render made `_user_content`'s reported
+  image length nondeterministic per call).
+- Evidence: `model/tests/` — 6 tests green (`test_dataset_builder.py`,
+  `test_benchmark_eval.py`, incl. a `run_eval` resumability check and a
+  perfect-provider severity-weighted-recall==1.0 sanity check). `uv sync
+  --extra dev` run in `model/` (torch/transformers/trl/peft + click/numpy
+  added to `model/pyproject.toml`). Independently reviewed via
+  `opencode run`.
+- Alternatives rejected: persisting rendered images to disk at pilot-
+  generation time in forge and loading them in `model/` — deferred; on-
+  demand re-render from `task.form` (now deterministic) is simpler and
+  avoids a forge/CLI change outside this workstream's scope, at the cost of
+  the model/ render not being byte-identical to whatever image forge's own
+  `image_form_sha256` was computed from (acceptable: same form content,
+  different but reproducible noise draw).
+
 ## 2026-08-17 — P2 — Golden benchmark (seed 777) + generator entropy fix
 - Decision: generated the golden benchmark via
   `habeas_forge.cli pilot --seed 777 --n 1000 --out data/golden.jsonl`

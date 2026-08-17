@@ -11,8 +11,11 @@ Specs: `README.md` (atomic spec), `CONTRACTS.md` (fixed benchmark contracts),
 ```
 forge/    habeas_forge: seeded I-9 packet generator + M-274/8 CFR rules
           engine (verifier-as-oracle) + contamination monitor + CLI
-model/    habeas_model: dataset builder (stub), benchmark eval (stub),
-          schema.py = model-output contract + parser + SYSTEM_PROMPT
+model/    habeas_model: dataset_builder.py (forge Task -> SFT chat-format
+          JSONL, base64 rendered page per task), benchmark_eval.py
+          (Provider adapter protocol + concurrent/checkpointed eval +
+          forge-oracle scoring), schema.py = model-output contract +
+          parser + SYSTEM_PROMPT
 cloud/    Modal app (L4 24GB, QLoRA) + Dockerfile + GCP spot script
 eval/     deterministic golden harness notes
 docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
@@ -33,7 +36,19 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
 - **P2 golden benchmark**: complete — `data/golden.jsonl` (seed 777, 1000
   tasks, 728 FLAG), zero overlap vs train/val confirmed. Fixed a generator
   entropy bug found in the process (see DECISIONS.md).
-- **P3+ not started**: dataset builder, SFT, RLVR, head-to-head.
+- **P3 dataset builder**: scaffolding complete —
+  `habeas_model.dataset_builder.build_dataset()` (also a small CLI: `python
+  -m habeas_model.dataset_builder build --tasks-file ... --out ...`) turns
+  forge Task JSONL into chat-format SFT records (system/user/assistant +
+  base64 rendered page); image rendering is seeded from the task signature
+  for reproducibility. `habeas_model.benchmark_eval` adds a minimal
+  `Provider` adapter protocol, concurrent + JSONL-checkpointed (resumable)
+  eval, and scoring via `habeas_forge.score`. `model/tests/` added (6
+  tests green) — needed `uv sync --extra dev` in `model/` (heavy deps:
+  torch/transformers/trl/peft) and `click`+`numpy` added to
+  `model/pyproject.toml`. **Smoke LoRA on Modal not run** — deferred,
+  shared gate, specula is the lead repo for that.
+- **P4 not started**: SFT, RLVR, head-to-head.
 
 ## Next actions
 
@@ -41,9 +56,12 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the
    current M-274 PDF directly if a discrepancy surfaces in practice.
-2. **P3**: dataset builder + **smoke LoRA on Modal** to validate Qwen3.8-27B
-   DeltaNet fine-tuning tooling (shared gate; specula is the lead).
-3. Wire a provider adapter into `benchmark_eval._predict_one` for head-to-head.
+2. **P3 remainder**: wire a real provider (local vLLM/MLX or frontier API)
+   behind the `Provider` protocol in `benchmark_eval.py` for actual
+   head-to-head runs (current tests use an in-memory test double); wire
+   `cloud/modal_train.py`'s `train()` to actually consume the `data: bytes`
+   param (currently unused — hardcoded `train_dataset=[]`) once the smoke
+   LoRA gate clears.
 
 ## Bootstrap (fresh agent)
 

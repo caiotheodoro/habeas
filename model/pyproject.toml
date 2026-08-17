@@ -13,6 +13,8 @@ dependencies = [
     "datasets>=3.0",
     "pillow>=11.0",
     "huggingface_hub>=0.26",
+    "click>=8.1",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
