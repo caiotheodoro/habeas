@@ -37,6 +37,21 @@ only with measured evidence.
   methodology without any privacy surface.
 - Evidence: generate.py (placeholder names/numbers).
 
+## 2026-08-17 — P4 Stage 1 — Scale up training corpus (seed 7, n=2000)
+- Decision: regenerated `data/pilot.jsonl` at `n=2000` (was 400), re-split
+  (train=1597, val=403, overlap=0), re-leakprobed (clean 0/403, leaked
+  10/10 planted). `n=2000` chosen as a reasonable middle ground pending
+  real per-step GPU timing from the (not-yet-run) smoke LoRA — cheap to
+  regenerate at a different `n` once that timing exists.
+- Rationale: 301 training tasks (the P0/P1/P2-era pilot size) validates the
+  pipeline but is too small for a real SFT run; docs/TRAINING_PLAN.md §Stage
+  1 calls for scaling before Stage 2.
+- Evidence: `contamination.split_overlap` confirms `data/golden.jsonl`
+  (seed 777, unchanged) stays zero-overlap against the new, larger
+  train/val — same check used for the original P2 golden-benchmark commit.
+- Alternatives rejected: leaving `n` at 400 and scaling later — no
+  advantage to deferring a free, local, deterministic regeneration step.
+
 ## 2026-08-17 — P3 — Dataset builder + benchmark_eval provider adapter
 - Decision: `habeas_model.dataset_builder` reads forge `Task` JSONL and
   emits chat-format SFT records (system = `SYSTEM_PROMPT`, user = form/doc
