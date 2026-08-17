@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
-CMD ["python", "-m", "i9forge_model.train"]
+CMD ["python", "-m", "attest_model.train"]

@@ -1,7 +1,7 @@
 [project]
-name = "i9forge-forge"
+name = "attest-forge"
 version = "0.1.0"
-description = "I9forge: seeded I-9/document generator + M-274/8 CFR oracle + benchmark"
+description = "Attest: seeded I-9/document generator + M-274/8 CFR oracle + benchmark"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",

@@ -1,4 +1,4 @@
-"""I9forge verifier-as-oracle: M-274 Handbook + 8 CFR 274a.2 rules engine.
+"""Attest verifier-as-oracle: M-274 Handbook + 8 CFR 274a.2 rules engine.
 
 Sources: USCIS M-274 Handbook for Employers, 8 CFR 274a.2, eCFR (verify exact
 citations in P1). Deterministic rules over the synthetic packet per

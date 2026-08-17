@@ -1,7 +1,7 @@
 [project]
-name = "i9forge-model"
+name = "attest-model"
 version = "0.1.0"
-description = "I9forge: dataset builder, QLoRA SFT, GRPO RLVR, benchmark eval"
+description = "Attest: dataset builder, QLoRA SFT, GRPO RLVR, benchmark eval"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",

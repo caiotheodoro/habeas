@@ -1,4 +1,4 @@
-"""Model-output contract + parser for I9forge (camelCase)."""
+"""Model-output contract + parser for Attest (camelCase)."""
 
 from __future__ import annotations
 

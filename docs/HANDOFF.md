@@ -1,4 +1,4 @@
-# I9forge — Handoff
+# Attest — Handoff
 
 ## Status (2026-08-17)
 - **P0 scaffold**: README, CONTRACTS, forge (schema, M-274/8 CFR oracle,

@@ -37,7 +37,7 @@ wheels = [
 ]
 
 [[package]]
-name = "i9forge-forge"
+name = "attest-forge"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

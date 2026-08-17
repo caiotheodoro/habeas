@@ -1,4 +1,4 @@
-"""I9forge canonical model. Mirrors CONTRACTS.md §1–§2.
+"""Attest canonical model. Mirrors CONTRACTS.md §1–§2.
 
 A task is a FormI9 packet (Sections 1-3 + Supplement A/B) + presented
 documents. The oracle applies M-274 / 8 CFR 274a.2 rules; the generator

@@ -1,4 +1,4 @@
-# I9forge — Benchmark & Scoring Contracts (FIXED)
+# Attest — Benchmark & Scoring Contracts (FIXED)
 
 Changes require a DECISIONS.md entry with evidence. Generator, verifier,
 scorer, contamination monitor, and eval all conform.
@@ -47,7 +47,7 @@ caught / emitted (unmatched = false positive). Unparseable = parse miss.
 
 ## 3. Oracle (verifier-as-oracle)
 
-`i9forge_forge.verify` implements M-274 Handbook + 8 CFR 274a.2:
+`attest_forge.verify` implements M-274 Handbook + 8 CFR 274a.2:
 
 - **Edition**: Section 1 must use the 2023-08-01 or 2025-01-20 edition.
 - **Combination**: exactly one List A document, OR one List B + one List C.

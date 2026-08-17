@@ -1,4 +1,4 @@
-# I9forge
+# Attest
 
 **Fine-tune a multimodal Qwen3.8-27B (28B, Apache-2.0) on Modal/GCP free
 credits so it beats frontier models at Form I-9 compliance validation.**
@@ -8,8 +8,8 @@ in → an audit-ready report comes out: every field problem, document
 acceptability issue, timeliness violation, and reverification gap, each cited
 to the M-274 Handbook / 8 CFR 274a.2.
 
-Fourth of four parallel repos (`labelforge`, `policyforge`, `payforge`,
-`i9forge`) on one shared methodology (`docs/methodology.md`). Independent and
+Fourth of four parallel repos (`plumb`, `seam`, `tally`,
+`attest`) on one shared methodology (`docs/methodology.md`). Independent and
 operable in parallel.
 
 ## Why this niche
@@ -47,7 +47,7 @@ contamination, benchmark rules.
 
 ```
 forge/      seeded I-9/document generator + M-274/8 CFR oracle + contamination
-            monitor + golden benchmark (pkg i9forge_forge)
+            monitor + golden benchmark (pkg attest_forge)
 model/      multimodal dataset builder, QLoRA SFT, GRPO RLVR, benchmark eval
 cloud/      Modal app + Dockerfile + GCP spot scripts
 eval/       deterministic golden harness
