@@ -30,8 +30,10 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
 - **Verified green**: `make validate` (8 tests; every violation type
   reachable, including REMOTE_EXAM_INVALID); 400-task pilot (287 FLAG, 82
   remote-exam packets), split overlap 0, contamination leak-probe ROC clean.
-- **P2+ not started**: golden benchmark, dataset builder, SFT, RLVR,
-  head-to-head.
+- **P2 golden benchmark**: complete — `data/golden.jsonl` (seed 777, 1000
+  tasks, 728 FLAG), zero overlap vs train/val confirmed. Fixed a generator
+  entropy bug found in the process (see DECISIONS.md).
+- **P3+ not started**: dataset builder, SFT, RLVR, head-to-head.
 
 ## Next actions
 
@@ -39,10 +41,9 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the
    current M-274 PDF directly if a discrepancy surfaces in practice.
-2. **P2**: build golden benchmark (seed 777) via the CLI.
-3. **P3**: dataset builder + **smoke LoRA on Modal** to validate Qwen3.8-27B
+2. **P3**: dataset builder + **smoke LoRA on Modal** to validate Qwen3.8-27B
    DeltaNet fine-tuning tooling (shared gate; specula is the lead).
-4. Wire a provider adapter into `benchmark_eval._predict_one` for head-to-head.
+3. Wire a provider adapter into `benchmark_eval._predict_one` for head-to-head.
 
 ## Bootstrap (fresh agent)
 

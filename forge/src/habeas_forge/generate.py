@@ -76,8 +76,9 @@ def generate_packet(rng: random.Random,
     if ViolationType.COMBINATION_INVALID in inj:
         form.documents = [d for d in form.documents if d.list_type == "B"]
         if not form.documents:
-            form.documents = [PresentedDoc(doc_type="driver_license", list_type="B",
-                                           number="D1", expiration="2029-05-01")]
+            form.documents = [PresentedDoc(
+                doc_type="driver_license", list_type="B",
+                number=f"D{rng.randint(10**7, 10**8)}", expiration="2029-05-01")]
     if ViolationType.DOC_INVALID in inj and form.documents:
         form.documents[0].list_type = "B" if form.documents[0].list_type != "B" else "A"
     if ViolationType.DOC_EXPIRED in inj:

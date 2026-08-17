@@ -37,6 +37,30 @@ only with measured evidence.
   methodology without any privacy surface.
 - Evidence: generate.py (placeholder names/numbers).
 
+## 2026-08-17 — P2 — Golden benchmark (seed 777) + generator entropy fix
+- Decision: generated the golden benchmark via
+  `habeas_forge.cli pilot --seed 777 --n 1000 --out data/golden.jsonl`
+  (1000 tasks, 728 FLAG). Fixed a generator bug discovered during zero-
+  overlap verification: `generate_packet()`'s `COMBINATION_INVALID`
+  injection fallback (when stripping documents leaves the list empty) used
+  a hardcoded document (`number="D1"`, fixed expiration) instead of a
+  randomized number — a zero-entropy fallback that, combined with the
+  generator's otherwise-small "valid packet" field space (64 name
+  combinations × 2 editions × 2 categories × fixed dates), produced
+  byte-identical `FormI9` signatures across independent seeds. Confirmed:
+  golden (seed 777) vs train/val (seed 7) had exactly 1 overlap each before
+  the fix, both traced to this fallback path; 0/0 after randomizing the
+  fallback document number.
+- Rationale: CONTRACTS.md §4 requires the benchmark be zero-overlap with
+  train/val; any zero-entropy code path in the generator is a latent
+  contamination-monitor blind spot regardless of dataset size.
+- Evidence: `contamination.split_overlap(train, golden)` /
+  `split_overlap(val, golden)` both 0 after the fix (were 1/1 before);
+  `make validate` still 8/8 green; independently reviewed via `opencode run`.
+- Alternatives rejected: re-seeding golden generation until no collision
+  appears (masks the bug rather than fixing it; a real deployment could hit
+  the same fallback and produce a genuinely duplicate task).
+
 ## 2026-08-17 — P1 — Citation verification: 8 CFR 274a.2 / M-274
 - Decision: verified all 9 pre-existing `verify.py` citation strings against
   authoritative source text; corrected 4. Final citations: EDITION_WRONG →
