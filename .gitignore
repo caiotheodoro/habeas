@@ -1,0 +1,27 @@
+# env
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# data / artifacts
+data/
+adapters/
+runs/
+*.pt
+*.safetensors
+*.jsonl
+
+# cloud secrets
+*.tok
+credentials.json
+application_default_credentials.json
+
+# os
+.DS_Store
