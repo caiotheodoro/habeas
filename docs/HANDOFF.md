@@ -4,7 +4,9 @@
 validates Form I-9 + presented documents → audit report citing M-274
 Handbook / 8 CFR 274a.2. Synthetic-only (heavy PII — never use real forms).
 Specs: `README.md` (atomic spec), `CONTRACTS.md` (fixed benchmark contracts),
-`docs/methodology.md` (shared recipe across specula, suture, plumb, habeas).
+`docs/methodology.md` (shared recipe across specula, suture, plumb, habeas),
+`docs/TRAINING_PLAN.md` (P4 SFT/RLVR/self-play/judges plan, design-only —
+no cloud jobs launched from it yet).
 
 ## Repo map
 
