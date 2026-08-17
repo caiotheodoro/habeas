@@ -4,7 +4,7 @@ import random
 
 from habeas_forge import contamination, generate
 from habeas_forge.schema import ViolationType, Verdict, Violation, Severity
-from habeas_forge.score import score_predictions, summarize
+from habeas_forge.score import reward, score_predictions, summarize
 from habeas_forge.verify import oracle_gate, verify
 
 
@@ -79,6 +79,57 @@ def test_ocr_noise_produces_valid_image():
     t = generate.task(rng, seed=3, n_violations=0, difficulty=1.0)
     assert t.ocr_noise_level > 0
     assert len(t.image_form_sha256) == 64
+
+
+def test_scoring_verdict_consistency():
+    v = Violation(type=ViolationType.DOC_EXPIRED, severity=Severity.HIGH,
+                  field="x", observed="o", expected="e", cfr="", correction="")
+    exp_flag = Verdict(verdict="FLAG", violations=[v])
+    exp_pass = Verdict(verdict="PASS", violations=[])
+
+    # instance-level recall is perfect (violation matched) but the model's
+    # own top-level verdict string contradicts its violation list
+    self_contradictory = score_predictions(exp_flag, Verdict(verdict="PASS", violations=[v]))
+    assert self_contradictory["caught"] == self_contradictory["total"]
+    assert self_contradictory["verdict_correct"] == 0.0
+
+    correct = score_predictions(exp_flag, Verdict(verdict="FLAG", violations=[v]))
+    assert correct["verdict_correct"] == 1.0
+
+    # FLAG with no violations listed on an expected-clean packet
+    hallucinated_flag = score_predictions(exp_pass, Verdict(verdict="FLAG", violations=[]))
+    assert hallucinated_flag["verdict_correct"] == 0.0
+
+    r = summarize([self_contradictory, correct])
+    assert r["verdict_accuracy"] == 0.5
+
+
+def test_reward_general_case():
+    v = Violation(type=ViolationType.DOC_EXPIRED, severity=Severity.HIGH,
+                  field="x", observed="o", expected="e", cfr="", correction="")
+    exp = Verdict(verdict="FLAG", violations=[v])
+    perfect = reward(exp, Verdict(verdict="FLAG", violations=[v]))
+    assert perfect == 1.0 + 0.2  # recall=1, no fp, verdict_bonus
+
+    missed = reward(exp, Verdict(verdict="PASS", violations=[]))
+    assert missed < perfect
+
+    false_positive = reward(exp, Verdict(verdict="FLAG", violations=[
+        v, Violation(type=ViolationType.TIMELINESS, severity=Severity.MEDIUM,
+                    field="y", observed="o", expected="e", cfr="", correction=""),
+    ]))
+    assert false_positive == 1.0 - 0.3 + 0.2  # recall=1, one fp, verdict correct
+
+
+def test_reward_clean_pass_case():
+    exp = Verdict(verdict="PASS", violations=[])
+    assert reward(exp, Verdict(verdict="PASS", violations=[])) == 1.0
+    assert reward(exp, Verdict(verdict="FLAG", violations=[])) == -1.0
+
+
+def test_reward_unparseable():
+    exp = Verdict(verdict="FLAG", violations=[])
+    assert reward(exp, None) == -1.0
 
 
 def test_contamination_roc():

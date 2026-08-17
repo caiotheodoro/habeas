@@ -37,6 +37,42 @@ only with measured evidence.
   methodology without any privacy surface.
 - Evidence: generate.py (placeholder names/numbers).
 
+## 2026-08-17 — P4 Stage 2 — Verdict-consistency scoring fix + RLVR reward()
+- Decision: `score_predictions` (CONTRACTS.md §2's scorer) previously only
+  compared violation-instance sets (`caught`/`total`/`fp`) and never
+  checked whether `predicted.verdict` (PASS|FLAG) itself was right or even
+  self-consistent with the listed violations — a model could score
+  perfect severity-weighted recall while emitting a self-contradictory
+  `PASS` alongside listed violations (or `FLAG` with none). Added a
+  `verdict_correct` field (`predicted.verdict == expected.verdict`) to
+  `score_predictions`'s return dict and a `verdict_accuracy` aggregate to
+  `summarize` — additive, existing keys/tests unaffected (`make validate`:
+  12/12 green, up from 8; new `verdict_correct`/`verdict_accuracy` keys
+  don't break `test_scoring`'s narrow key-lookup assertion).
+- Also added `reward(expected, predicted, fp_penalty=0.3,
+  verdict_bonus=0.2, unparseable_reward=-1.0) -> float` in the same file,
+  reusing the (now-fixed) `score_predictions` — the scalar RLVR reward
+  docs/TRAINING_PLAN.md §Stage 3 calls for. Branches: unparseable → worst
+  score (no partial credit, methodology.md's outcome-verifier-only rule);
+  clean-PASS expected (total==0, no recall ratio to compute) → scored
+  purely on `verdict_correct` minus fp penalty; general case →
+  severity-weighted recall minus fp penalty plus/minus a verdict_bonus.
+  Pure function of `(Verdict, Verdict | None)` — no dependency on
+  `habeas_model` (wrong direction; raw-text parsing into a `Verdict` stays
+  a `habeas_model`-layer concern).
+- Rationale: this was going to become load-bearing for RLVR reward shaping
+  (a reward function built on an incomplete scorer would silently
+  under-penalize verdict-contradicting outputs), and the fix benefits SFT
+  eval and benchmark eval identically since they share the same scorer —
+  closing it once here beats three separate patches later.
+- Evidence: `forge/tests/test_forge.py::test_scoring_verdict_consistency`,
+  `test_reward_general_case`, `test_reward_clean_pass_case`,
+  `test_reward_unparseable` — all green.
+- Alternatives rejected: patching only inside the new `reward()` function
+  and leaving `score_predictions`/`summarize` untouched — would leave
+  benchmark/SFT eval reporting the same blind spot RLVR was fixed for,
+  and duplicate the verdict-comparison logic instead of sharing it.
+
 ## 2026-08-17 — P4 Stage 1 — Scale up training corpus (seed 7, n=2000)
 - Decision: regenerated `data/pilot.jsonl` at `n=2000` (was 400), re-split
   (train=1597, val=403, overlap=0), re-leakprobed (clean 0/403, leaked
