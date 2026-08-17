@@ -1,4 +1,4 @@
-# Attest — Benchmark & Scoring Contracts (FIXED)
+# Habeas — Benchmark & Scoring Contracts (FIXED)
 
 Changes require a DECISIONS.md entry with evidence. Generator, verifier,
 scorer, contamination monitor, and eval all conform.
@@ -38,7 +38,7 @@ Model emits audit report JSON:
 | Section 2 completed after the 3-business-day deadline | `TIMELINESS` | MEDIUM | 0.6 |
 | Required Section 1/2 field incomplete | `FIELD_INCOMPLETE` | MEDIUM | 0.6 |
 | Wrong form edition | `EDITION_WRONG` | MEDIUM | 0.6 |
-| Attestation category inconsistent with documents | `CATEGORY_MISMATCH` | MEDIUM | 0.6 |
+| Habeasation category inconsistent with documents | `CATEGORY_MISMATCH` | MEDIUM | 0.6 |
 | Minor data-entry inconsistency (name/DOB across sections) | `DATA_INCONSISTENT` | LOW | 0.3 |
 
 Severity-weighted recall `R_w = Σ w·caught / Σ w` over violation-bearing
@@ -47,7 +47,7 @@ caught / emitted (unmatched = false positive). Unparseable = parse miss.
 
 ## 3. Oracle (verifier-as-oracle)
 
-`attest_forge.verify` implements M-274 Handbook + 8 CFR 274a.2:
+`habeas_forge.verify` implements M-274 Handbook + 8 CFR 274a.2:
 
 - **Edition**: Section 1 must use the 2023-08-01 or 2025-01-20 edition.
 - **Combination**: exactly one List A document, OR one List B + one List C.
@@ -60,7 +60,7 @@ caught / emitted (unmatched = false positive). Unparseable = parse miss.
   (TIMELINESS).
 - **Reverification**: when work authorization expires, Supplement B must
   record a reverification (REVERIFICATION).
-- **Category**: the Section 1 attestation category must be consistent with the
+- **Category**: the Section 1 habeasation category must be consistent with the
   presented documents (CATEGORY_MISMATCH).
 - **Completeness**: required Section 1/2 fields present (FIELD_INCOMPLETE);
   cross-section name/DOB consistency (DATA_INCONSISTENT).

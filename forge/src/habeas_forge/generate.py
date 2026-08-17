@@ -43,7 +43,7 @@ def _valid_packet(rng: random.Random) -> FormI9:
     work_exp = None if category == "citizen" else "2028-12-31"
     return FormI9(
         edition=edition, hire_date=hire.isoformat(), section2_date=s2.isoformat(),
-        section1_complete=True, attestation_category=category, documents=docs,
+        section1_complete=True, habeasation_category=category, documents=docs,
         reverified=work_exp is not None and dt.date.fromisoformat(work_exp) < s2,
         work_auth_expiration=work_exp,
         name_section1=name, name_section2=name,
@@ -67,7 +67,7 @@ def generate_packet(rng: random.Random,
     if ViolationType.DATA_INCONSISTENT in inj:
         form.name_section2 = form.name_section1 + " Jr."
     if ViolationType.CATEGORY_MISMATCH in inj:
-        form.attestation_category = "undocumented"
+        form.habeasation_category = "undocumented"
     if ViolationType.COMBINATION_INVALID in inj:
         form.documents = [d for d in form.documents if d.list_type == "B"]
         if not form.documents:
@@ -120,7 +120,7 @@ def render_form(form: FormI9) -> bytes:
     d.text((20, y), "FORM I-9  Employment Eligibility Verification", fill="black", font=font); y += 24
     d.text((20, y), f"Edition: {form.edition}", fill="black", font=small); y += 20
     d.text((20, y), f"Section 1 name: {form.name_section1}", fill="black", font=small); y += 16
-    d.text((20, y), f"DOB: {form.dob_section1}   Attestation: {form.attestation_category}", fill="black", font=small); y += 16
+    d.text((20, y), f"DOB: {form.dob_section1}   Habeasation: {form.habeasation_category}", fill="black", font=small); y += 16
     d.text((20, y), f"Complete: {form.section1_complete}", fill="black", font=small); y += 22
     d.text((20, y), "SECTION 2", fill="black", font=font); y += 20
     d.text((20, y), f"Hire date: {form.hire_date}   Section 2 date: {form.section2_date}", fill="black", font=small); y += 16

@@ -1,4 +1,4 @@
-# Attest
+# Habeas
 
 **Fine-tune a multimodal Qwen3.8-27B (28B, Apache-2.0) on Modal/GCP free
 credits so it beats frontier models at Form I-9 compliance validation.**
@@ -8,8 +8,8 @@ in → an audit-ready report comes out: every field problem, document
 acceptability issue, timeliness violation, and reverification gap, each cited
 to the M-274 Handbook / 8 CFR 274a.2.
 
-Fourth of four parallel repos (`plumb`, `seam`, `tally`,
-`attest`) on one shared methodology (`docs/methodology.md`). Independent and
+Fourth of four parallel repos (`specula`, `suture`, `plumb`,
+`habeas`) on one shared methodology (`docs/methodology.md`). Independent and
 operable in parallel.
 
 ## Why this niche
@@ -31,7 +31,7 @@ operable in parallel.
 1. Ingest employee Section 1 + Section 2 + Supplement A/B data, plus scans of
    presented documents.
 2. Validate every field; classify documents against the fixed List A/B/C
-   acceptability table; check category-code/expiry/attestation consistency.
+   acceptability table; check category-code/expiry/habeasation consistency.
 3. Enforce timeliness (Section 2 ≤ 3 business days from hire) and
    reverification (Supplement B when work authorization expires); apply the
    remote-examination (E-Verify) branch.
@@ -47,7 +47,7 @@ contamination, benchmark rules.
 
 ```
 forge/      seeded I-9/document generator + M-274/8 CFR oracle + contamination
-            monitor + golden benchmark (pkg attest_forge)
+            monitor + golden benchmark (pkg habeas_forge)
 model/      multimodal dataset builder, QLoRA SFT, GRPO RLVR, benchmark eval
 cloud/      Modal app + Dockerfile + GCP spot scripts
 eval/       deterministic golden harness

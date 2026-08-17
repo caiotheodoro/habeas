@@ -1,12 +1,12 @@
-# Attest — Benchmark Report
+# Habeas — Benchmark Report
 
 _Template. Populated after P6 (head-to-head vs frontier)._
 
 | Model | Severity-w. recall | HIGH recall | Citation acc | Parse |
 |---|---|---|---|---|
-| **Attest (Qwen3.8-27B QLoRA + RLVR)** | — | — | — | — |
+| **Habeas (Qwen3.8-27B QLoRA + RLVR)** | — | — | — | — |
 | Qwen3.8-2.4T-A95B (frontier) | — | — | — | — |
 | DeepSeek v4-flash (frontier) | — | — | — | — |
 | Base Qwen3.8-27B (zero-shot) | — | — | — | — |
 
-Run book: `cd forge && uv run python -m attest_forge.cli pilot --seed 777 --n 1000 --out data/benchmark.jsonl` then `model` bench eval. Contamination: train/bench overlap = 0; leak probe ROC green.
+Run book: `cd forge && uv run python -m habeas_forge.cli pilot --seed 777 --n 1000 --out data/benchmark.jsonl` then `model` bench eval. Contamination: train/bench overlap = 0; leak probe ROC green.

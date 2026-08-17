@@ -1,4 +1,4 @@
-# Attest — Decision Log
+# Habeas — Decision Log
 
 Append entries as decisions are made. Contract defaults are fixed; revise
 only with measured evidence.

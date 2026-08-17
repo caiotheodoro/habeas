@@ -1,7 +1,7 @@
 [project]
-name = "attest-forge"
+name = "habeas-forge"
 version = "0.1.0"
-description = "Attest: seeded I-9/document generator + M-274/8 CFR oracle + benchmark"
+description = "Habeas: seeded I-9/document generator + M-274/8 CFR oracle + benchmark"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",

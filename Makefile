@@ -9,7 +9,7 @@ validate:
 	cd forge && uv run python -m pytest -q
 
 study:
-	cd forge && $(PY) python -m attest_forge.cli pilot --seed 7 --n 400
+	cd forge && $(PY) python -m habeas_forge.cli pilot --seed 7 --n 400
 
 bench:
-	cd model && $(PY) python -m attest_model.benchmark_eval --tasks-file data/benchmark.jsonl
+	cd model && $(PY) python -m habeas_model.benchmark_eval --tasks-file data/benchmark.jsonl

@@ -1,4 +1,4 @@
-"""Attest verifier-as-oracle: M-274 Handbook + 8 CFR 274a.2 rules engine.
+"""Habeas verifier-as-oracle: M-274 Handbook + 8 CFR 274a.2 rules engine.
 
 Sources: USCIS M-274 Handbook for Employers, 8 CFR 274a.2, eCFR (verify exact
 citations in P1). Deterministic rules over the synthetic packet per
@@ -123,11 +123,11 @@ def verify(form: FormI9) -> Verdict:
                           "Supplement B reverification recorded",
                           "8 CFR 274a.2(b)(1)(vii)", "record Supplement B reverification"))
 
-    if form.attestation_category not in VALID_CATEGORIES:
+    if form.habeasation_category not in VALID_CATEGORIES:
         out.append(_v(ViolationType.CATEGORY_MISMATCH, "SECTION1.ATTESTATION",
-                      f"invalid category '{form.attestation_category}'",
+                      f"invalid category '{form.habeasation_category}'",
                       "citizen | noncitizen_national | lpr | authorized",
-                      "8 CFR 274a.2(b)(1)(i)(A)", "correct the attestation"))
+                      "8 CFR 274a.2(b)(1)(i)(A)", "correct the habeasation"))
 
     return Verdict(verdict="PASS" if not out else "FLAG", violations=out)
 

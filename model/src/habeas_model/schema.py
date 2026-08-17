@@ -1,4 +1,4 @@
-"""Model-output contract + parser for Attest (camelCase)."""
+"""Model-output contract + parser for Habeas (camelCase)."""
 
 from __future__ import annotations
 

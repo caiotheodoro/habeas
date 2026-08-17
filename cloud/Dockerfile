@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
-CMD ["python", "-m", "attest_model.train"]
+CMD ["python", "-m", "habeas_model.train"]

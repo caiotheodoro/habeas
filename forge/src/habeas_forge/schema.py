@@ -1,4 +1,4 @@
-"""Attest canonical model. Mirrors CONTRACTS.md §1–§2.
+"""Habeas canonical model. Mirrors CONTRACTS.md §1–§2.
 
 A task is a FormI9 packet (Sections 1-3 + Supplement A/B) + presented
 documents. The oracle applies M-274 / 8 CFR 274a.2 rules; the generator
@@ -63,7 +63,7 @@ class FormI9(BaseModel):
     hire_date: str               # ISO
     section2_date: str           # ISO (when Section 2 was completed)
     section1_complete: bool
-    attestation_category: str    # citizen | noncitizen_national | lpr | authorized
+    habeasation_category: str    # citizen | noncitizen_national | lpr | authorized
     documents: list[PresentedDoc] = Field(default_factory=list)
     reverified: bool
     work_auth_expiration: str | None

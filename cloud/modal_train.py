@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import modal
 
-app = modal.App("attest-train")
-vol = modal.Volume.from_name("attest-checkpoints", create_if_missing=True)
+app = modal.App("habeas-train")
+vol = modal.Volume.from_name("habeas-checkpoints", create_if_missing=True)
 image = modal.Image.from_dockerfile("Dockerfile")
 GPU_L4 = modal.gpu.L4(count=1)
 

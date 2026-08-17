@@ -1,11 +1,11 @@
-"""Attest forge tests: oracle, generator gate, scoring, contamination."""
+"""Habeas forge tests: oracle, generator gate, scoring, contamination."""
 
 import random
 
-from attest_forge import contamination, generate
-from attest_forge.schema import ViolationType, Verdict, Violation, Severity
-from attest_forge.score import score_predictions, summarize
-from attest_forge.verify import oracle_gate, verify
+from habeas_forge import contamination, generate
+from habeas_forge.schema import ViolationType, Verdict, Violation, Severity
+from habeas_forge.score import score_predictions, summarize
+from habeas_forge.verify import oracle_gate, verify
 
 
 def test_pass_packet_fires_nothing():
