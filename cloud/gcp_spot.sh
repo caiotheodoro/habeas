@@ -48,6 +48,13 @@ set -euo pipefail
 # preinstalled build is CUDA-linked; a bare \`pip install torch\` can
 # silently replace it with a mismatched or CPU-only wheel.
 pip3 install transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
+# One of the above transitively pulled torchaudio 2.11.0 while the image's
+# torch stayed at 2.9.1 — an ABI break (peft -> transformers -> ... ->
+# torchaudio's compiled extension: "undefined symbol"). We don't use audio
+# at all, so just remove it rather than fight pip's resolver for a pin
+# that would need re-verifying every image update. Found via an actual
+# smoke run, see docs/DECISIONS.md.
+pip3 uninstall -y torchaudio || true
 cd /root && git clone https://github.com/caiotheodoro/habeas.git && cd habeas
 export PYTHONPATH=/root/habeas/model/src:/root/habeas/forge/src
 # data/ is gitignored: a fresh clone has no pilot/train/val files, so
