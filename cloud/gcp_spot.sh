@@ -24,6 +24,12 @@
 # NVIDIA_A100_GPUS quota was approved (not on-demand) as of 2026-08-18 —
 # PREEMPTIBLE=true is currently required for GPU_TYPE=nvidia-tesla-a100,
 # accepting the preemption risk since it's the only quota available.
+# GCP_BOOT_DISK_SIZE=300GB (default): the DLVM image's own minimum is
+# 100GB, and the model alone needs 70GB+ just for weights during download
+# — a 100GB disk filled up mid-download ("No space left on device"),
+# which manifested first as repeated network-looking stalls (writes
+# blocking when the disk is nearly full) before finally erroring outright.
+# Found via an actual A100 VALIDATE run, see docs/DECISIONS.md.
 set -euo pipefail
 PROJECT=${GCP_PROJECT:-cambio-curitiba-498923}
 ZONE=${GCP_ZONE:-us-central1-a}
@@ -113,13 +119,14 @@ python3 -m habeas_model.dataset_builder build --tasks-file forge/data/train.json
 python3 -m habeas_model.train_cli --data data/sft-train.jsonl --out /root/checkpoints/sft $TRAIN_CLI_FLAG 2>&1 | tee /root/train.log
 EOF
 
+BOOT_DISK_SIZE=${GCP_BOOT_DISK_SIZE:-300GB}
 gcloud compute instances create "$NAME" \
   --project="$PROJECT" --zone="$ZONE" --machine-type="$MACHINE" \
   --accelerator=type=$GPU_TYPE,count=1 \
   $PREEMPT_FLAGS \
   --image-family=pytorch-2-9-cu129-ubuntu-2204-nvidia-580 \
   --image-project=deeplearning-platform-release \
-  --boot-disk-size=100GB \
+  --boot-disk-size=$BOOT_DISK_SIZE \
   --metadata-from-file=startup-script="$STARTUP_SCRIPT"
 
 echo "started $NAME ($GPU_TYPE, preemptible=$PREEMPTIBLE, SMOKE=$SMOKE, VALIDATE=$VALIDATE) — gcloud compute ssh $NAME --zone=$ZONE"

@@ -149,6 +149,35 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — A100 VALIDATE attempt: 100GB boot disk was the real culprit
+- Decision: launched an A100 40GB (`a2-highgpu-1g`) `VALIDATE=true` run to
+  re-check GPU-memory fit after the L4 OOM (see the entry below). The
+  model download repeatedly appeared to stall (near-zero network
+  throughput for minutes at a time, `CLOSE-WAIT` connections) — initially
+  diagnosed as HF anonymous-rate-limiting (repeated "unauthenticated
+  requests" warnings) and worked around with a user-supplied `HF_TOKEN`,
+  which did seem to help temporarily. The download eventually failed
+  outright with `OSError: [Errno 28] No space left on device` —
+  `df -h /` showed 93GB/97GB used. **The actual root cause was the boot
+  disk, not the network**: the default `--boot-disk-size=100GB` (the DLVM
+  image's own stated minimum) left far too little room once ~70GB+ of
+  model weights started accumulating during download — the "stalls" were
+  very likely disk-nearly-full write blocking, not HF throttling (the
+  HF_TOKEN fix may have been solving a real but secondary problem, or
+  coincidentally timed with the disk filling further). Fixed by adding
+  `GCP_BOOT_DISK_SIZE` (default `300GB`) to `gcp_spot.sh`.
+- Rationale: 100GB was sized for a driver+deps DLVM image, never
+  re-evaluated once a 70GB+ model entered the picture. A generously-sized
+  disk is cheap relative to GPU-hour cost; running out mid-download on an
+  A100 wastes far more than the extra disk ever costs.
+- Evidence: `df -h /` on the live instance (93G/97G used, 3.9G free);
+  exact traceback (`_create_symlink` → `os.symlink` → `ENOSPC`) in the
+  instance's systemd journal. Instance torn down, relaunching with the
+  disk fix.
+- Alternatives rejected: keep diagnosing as a network/HF-token issue —
+  would have kept failing at the same disk ceiling regardless of transfer
+  speed or auth.
+
 ## 2026-08-18 — P4 — VALIDATE run: real config does NOT reliably fit an L4
 - Decision: ran `VALIDATE=true` (50 tasks, real `max_length=4096`,
   full-resolution images, `--max-steps 5`) on a fresh on-demand L4
