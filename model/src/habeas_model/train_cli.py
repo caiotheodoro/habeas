@@ -50,12 +50,19 @@ def _load_sft_records(data_path: str, smoke: bool) -> list[dict]:
     return records
 
 
-def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) -> None:
+def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
+           max_steps: int | None = None) -> None:
     """Train a QLoRA adapter on Qwen3.8-27B from an SFT-record JSONL.
 
-    `smoke=True` caps both the data slice (first 8 records) and the step
-    count (max_steps=5) — belt-and-suspenders so a misconfigured smoke run
-    can't accidentally become a full, costly training pass.
+    `smoke=True` caps both the data slice (first 8 records) and image size
+    (224x224) plus `max_length=1024` — a cheap tooling-only validation that
+    intentionally doesn't reflect real training's GPU-memory footprint.
+
+    `max_steps` (independent of `smoke`) lets a caller bound a run to a
+    handful of steps while still using the real config — max_length=4096,
+    full-resolution images — the intended way to validate real-scale GPU
+    memory fit on a small task count before committing to a full run (the
+    smoke config is deliberately too small to answer that question).
     """
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
@@ -100,7 +107,7 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) 
             per_device_train_batch_size=1, gradient_accumulation_steps=4,
             gradient_checkpointing=True, bf16=True, logging_steps=10,
             num_train_epochs=1 if smoke else epochs,
-            max_steps=5 if smoke else -1,
+            max_steps=max_steps if max_steps is not None else (5 if smoke else -1),
         ),
         train_dataset=ds,
     )
@@ -113,8 +120,11 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) 
 @click.option("--out", "out_dir", required=True, help="checkpoint output dir")
 @click.option("--smoke", is_flag=True, default=False)
 @click.option("--epochs", default=2)
-def main(data_path: str, out_dir: str, smoke: bool, epochs: int) -> None:
-    run_sft(data_path, out_dir, smoke=smoke, epochs=epochs)
+@click.option("--max-steps", default=None, type=int,
+             help="Bound a run to N steps regardless of --smoke (for a "
+                  "real-config, small-data GPU-memory validation).")
+def main(data_path: str, out_dir: str, smoke: bool, epochs: int, max_steps: int | None) -> None:
+    run_sft(data_path, out_dir, smoke=smoke, epochs=epochs, max_steps=max_steps)
     click.echo(f"wrote checkpoint to {out_dir}-final")
 
 
