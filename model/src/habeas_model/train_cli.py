@@ -72,7 +72,14 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) 
         args=SFTConfig(
             # max_seq_length was renamed to max_length in the installed trl
             # (found via an actual smoke run — TypeError otherwise).
-            output_dir=out_dir, max_length=4096,
+            # Smoke mode uses a shorter max_length: the fp32 upcast inside
+            # trl's chunked cross-entropy loss (h.float() @ w.float().t())
+            # OOM'd an L4 at 4096 with the 4-bit model already using ~17GB
+            # of 22GB usable VRAM — found via an actual smoke run. Real
+            # (non-smoke) runs may need a bigger GPU or further tuning
+            # (smaller chunks, activation offload) at 4096; not solved
+            # here since it's out of scope for validating the tooling.
+            output_dir=out_dir, max_length=1024 if smoke else 4096,
             per_device_train_batch_size=1, gradient_accumulation_steps=4,
             gradient_checkpointing=True, bf16=True, logging_steps=10,
             num_train_epochs=1 if smoke else epochs,
