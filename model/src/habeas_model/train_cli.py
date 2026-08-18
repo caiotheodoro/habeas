@@ -33,7 +33,20 @@ def _load_sft_records(data_path: str, smoke: bool) -> list[dict]:
     from PIL import Image
     for r in records:
         img_b64 = r.pop("image_b64", None)
-        r["images"] = [Image.open(io.BytesIO(base64.b64decode(img_b64)))] if img_b64 else []
+        if not img_b64:
+            r["images"] = []
+            continue
+        img = Image.open(io.BytesIO(base64.b64decode(img_b64)))
+        if smoke:
+            # The full-size rendered page (~700x920) produces enough vision
+            # tokens to OOM an L4 even with a 4-bit model and max_length=1024
+            # — found via an actual smoke run (fp32 upcast inside trl's
+            # chunked cross-entropy: "CUDA out of memory. Tried to allocate
+            # 4.74 GiB"), and reducing max_length alone had zero effect,
+            # confirming vision tokens (not text length) were the driver.
+            # Smoke only validates the tooling, not fidelity, so downscale.
+            img = img.resize((224, 224))
+        r["images"] = [img]
     return records
 
 
