@@ -63,12 +63,19 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
   session (unrelated to the training code); `cloud/modal_train.py`/
   `modal_rlvr.py` carry the same code fixes but haven't themselves been
   live-verified on Modal.
-- **P4 Stages 1-3 (real SFT/RLVR)**: code built and unit-tested (see P3
-  entry above), but **not live-verified at real scale** — the smoke run
-  used 8 synthetic tasks and 224×224 downscaled images specifically to fit
-  an L4; real training's `max_length=4096` / full-resolution images / full
-  ~1600-task corpus GPU-memory footprint has not itself been tested. Do
-  not assume it "just works" by extrapolation from the smoke pass.
+- **P4 real-scale GPU fit: CONFIRMED on A100 40GB ✓ (2026-08-18)** — L4
+  does not reliably fit the real config (confirmed via a `VALIDATE=true`
+  run: step 1/5 succeeded at 21.5/22GB, step 2 OOM'd). A100 40GB
+  (`a2-highgpu-1g`) does: `VALIDATE=true GPU_TYPE=nvidia-tesla-a100
+  PREEMPTIBLE=true` completed 5/5 steps at a stable ~23.7GB/40GB,
+  checkpoint verified. Only **preemptible** A100 quota is approved in
+  `project-ddef13eb-b20f-47e0-af0` (not on-demand) — real full runs accept
+  that preemption risk for now. Also fixed along the way: `gcp_spot.sh`'s
+  boot disk was too small (100GB — the model needs 70GB+, filled the disk
+  mid-download and looked like network stalls before erroring outright;
+  default is now 300GB), and added optional `HF_TOKEN` pass-through.
+  **A real full SFT run (full corpus, real epochs) has still not itself
+  been run** — only the bounded 5-step/50-task validation pass.
 
 ## Next actions
 
@@ -79,11 +86,14 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
 2. **P3 remainder**: wire a real provider (local vLLM/MLX or frontier API)
    behind the `Provider` protocol in `benchmark_eval.py` for actual
    head-to-head runs (current tests use an in-memory test double).
-3. **P4 real SFT run**: now unblocked (gate cleared) — needs its own GPU-
-   sizing decision (L4 may or may not be sufficient at full `max_length`/
-   resolution even with liger-kernel; verify before assuming) and, per
-   methodology.md, teacher-distilled verifier-filtered traces rather than
-   the smoke run's raw oracle-target data.
+3. **P4 real SFT run**: config confirmed to fit an A100 — the actual full
+   run (full corpus, real epochs, `GPU_TYPE=nvidia-tesla-a100
+   PREEMPTIBLE=true`, no `--max-steps`/`--smoke`) hasn't been launched
+   yet. Preemption risk is real for a run this much longer than the
+   11-minute validation pass; `run_sft` has no checkpoint-resume support
+   if preempted. Per methodology.md, real training should also use
+   teacher-distilled verifier-filtered traces rather than the validation
+   run's raw oracle-target data.
 
 ## Bootstrap (fresh agent)
 

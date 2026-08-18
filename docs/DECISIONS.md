@@ -149,6 +149,32 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — REAL CONFIG VALIDATED ON A100 ✓
+- Decision: after fixing the boot-disk-size bug (previous entry), reran
+  `VALIDATE=true GPU_TYPE=nvidia-tesla-a100 PREEMPTIBLE=true` (only
+  preemptible A100 quota was approved) on a fresh `a2-highgpu-1g`
+  instance (`habeas-train-0818-1317`, us-central1-a). Full success: all
+  5/5 steps completed (`train_runtime: 672.9s`), checkpoint written and
+  verified (`adapter_model.safetensors`, 499MB), GPU memory stable at
+  ~23.7GB/40GB throughout (comfortable headroom, unlike the L4's
+  near-100%-then-OOM). **Real training config (`max_length=4096`,
+  full-resolution images) is confirmed to fit an A100 40GB.** This closes
+  the caveat both `HANDOFF.md` and `TRAINING_PLAN.md` have carried since
+  the Stage 0 smoke gate cleared.
+- Rationale: this was the actual question the user's "bigger GPU" decision
+  needed answered before committing to a full, multi-hour, multi-task real
+  run — now answered with real evidence, not extrapolation.
+- Evidence: live `nvidia-smi` telemetry (23.7GB stable across all 5
+  steps), `train_runtime`/`train_loss` output, checkpoint file listing on
+  the instance. Instance torn down immediately after confirmation.
+- Next: a real full SFT run (full ~1600-task corpus, real epochs, no
+  `--max-steps`/`--smoke` bound) can now proceed on
+  `GPU_TYPE=nvidia-tesla-a100 PREEMPTIBLE=true` — note the preemption risk
+  is real for a run this much longer than 11 minutes; consider requesting
+  on-demand A100 quota before a very long full run, or accept
+  checkpoint-and-resume risk on preemption (not yet built — `run_sft`
+  doesn't currently support resuming from a partial checkpoint).
+
 ## 2026-08-18 — P4 — A100 VALIDATE attempt: 100GB boot disk was the real culprit
 - Decision: launched an A100 40GB (`a2-highgpu-1g`) `VALIDATE=true` run to
   re-check GPU-memory fit after the L4 OOM (see the entry below). The

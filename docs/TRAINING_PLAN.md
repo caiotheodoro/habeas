@@ -182,18 +182,25 @@ each):**
   `model/src/habeas_model/train_cli.py` now reflects those fixes. The
   multimodal `images` column format (item 3, old list) is now confirmed
   working — that was one of the bugs fixed and verified live.
+- **Real-scale GPU fit: confirmed on A100 40GB (2026-08-18).** L4 does
+  NOT reliably fit the real config (step 1/5 succeeded at 21.5/22GB, step
+  2 OOM'd), so `gcp_spot.sh` gained `GPU_TYPE=nvidia-tesla-a100` — a
+  `VALIDATE=true` run there completed 5/5 steps at a stable ~23.7GB/40GB,
+  checkpoint verified. Only *preemptible* A100 quota is approved in this
+  project (`GPU_TYPE=nvidia-tesla-a100` currently requires
+  `PREEMPTIBLE=true`). Along the way: fixed the boot disk being too small
+  (100GB — the model alone needs 70GB+, filled the disk mid-download,
+  which looked like network stalls before erroring outright; default is
+  now 300GB via `GCP_BOOT_DISK_SIZE`), and added optional `HF_TOKEN`
+  pass-through (raises HF Hub rate limits, a real but secondary fix).
 
 **Still open:**
-1. Real SFT run at full scale (`max_length=4096`, full-resolution images,
-   full ~1600-task corpus) — **confirmed via a `VALIDATE=true` run
-   (2026-08-18, see docs/DECISIONS.md) that this does NOT reliably fit an
-   L4**, even with `use_liger_kernel=True`: step 1/5 succeeded (21.5GB/22GB
-   used), step 2 OOM'd on a 340MB allocation — essentially zero headroom.
-   Needs a user decision before proceeding: (a) bigger GPU (A100 40GB+,
-   another manual quota-increase round-trip), or (b) a reduced real config
-   (e.g. `max_length=2048`, moderate image downscale) that reliably fits
-   an L4. `gcp_spot.sh`'s `VALIDATE=true` mode exists to cheaply re-check
-   whichever option is chosen before committing to the full run.
+1. A real full SFT run (full ~1600-task corpus, real epochs) has not
+   itself been run — only the bounded 5-step/50-task `VALIDATE` pass. The
+   config is confirmed to fit; a multi-hour full run has its own new risk
+   (preemption — only preemptible A100 quota is available, and
+   `run_sft` has no resume-from-checkpoint support if preempted
+   mid-run). Consider requesting on-demand A100 quota before a long run.
 2. Wire a real `Provider` (local vLLM/MLX or frontier API) into
    `benchmark_eval`/the teacher-distillation path — current tests use
    in-repo mock/test-double providers only (a deliberate scope cut this
