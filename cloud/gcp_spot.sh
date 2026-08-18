@@ -22,8 +22,16 @@ set -euo pipefail
 PROJECT=${GCP_PROJECT:-cambio-curitiba-498923}
 ZONE=${GCP_ZONE:-us-central1-a}
 MACHINE=${GCP_MACHINE:-g2-standard-12}
-SMOKE=${SMOKE:-true}
 VALIDATE=${VALIDATE:-false}
+# SMOKE defaults to true UNLESS VALIDATE=true was explicitly requested —
+# without this, SMOKE's default silently wins the if/elif below and a
+# caller who only set VALIDATE=true gets a smoke run instead (this
+# actually happened once — see docs/DECISIONS.md).
+if [ "$VALIDATE" = "true" ]; then
+  SMOKE=${SMOKE:-false}
+else
+  SMOKE=${SMOKE:-true}
+fi
 PILOT_N=${PILOT_N:-2000}
 VALIDATE_N=${VALIDATE_N:-50}
 VALIDATE_STEPS=${VALIDATE_STEPS:-5}

@@ -149,6 +149,30 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — gcp_spot.sh VALIDATE mode + a SMOKE/VALIDATE footgun
+- Decision: added a `VALIDATE=true` mode to `gcp_spot.sh` — real config
+  (`max_length=4096`, full-resolution images) on a small task count
+  (`VALIDATE_N`, default 50), bounded to `VALIDATE_STEPS` (default 5) via
+  a new `train_cli.py --max-steps` override (independent of `--smoke`).
+  This is the deliberate middle ground between the Stage 0 smoke gate
+  (deliberately undersized, doesn't answer real-scale GPU-memory
+  questions) and a full real run — check the real config fits an L4 with a
+  handful of cheap steps before committing to hours of real training.
+- **Bug caught immediately on first use**: launching with only
+  `VALIDATE=true` set (not also `SMOKE=false`) silently ran a **smoke**
+  run instead — `SMOKE` defaulted to `true` regardless, and the script's
+  `if SMOKE ... elif VALIDATE ...` branching let the default win. Fixed by
+  making `SMOKE`'s default conditional on `VALIDATE`: `VALIDATE=true` now
+  makes `SMOKE` default to `false` unless explicitly overridden. Verified
+  via a standalone bash snippet exercising both branches before relaunching.
+- Rationale: this is a real config-footgun class of bug — silent wrong-mode
+  execution is worse than a hard failure, since it looks like it's doing
+  the right thing (an actual instance came up, an actual run started) while
+  answering the wrong question entirely. Caught before any GPU time was
+  wasted on the wrong config (deleted immediately, ~1 min after launch).
+- Evidence: `bash -c` dry-run of the default-selection logic for both
+  `VALIDATE=true` (→ `SMOKE=false`) and unset (→ `SMOKE=true`) cases.
+
 ## 2026-08-18 — P4 Stage 0 — SMOKE-LORA GATE CLEARED ✓
 - Decision: after 7 live iterations on GCP (each catching and fixing one
   real bug — see the entries below, all from this same session/date),
