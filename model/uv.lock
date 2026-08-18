@@ -743,6 +743,7 @@ dependencies = [
     { name = "click" },
     { name = "datasets" },
     { name = "huggingface-hub" },
+    { name = "liger-kernel", marker = "sys_platform == 'linux'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "peft" },
@@ -767,6 +768,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "datasets", specifier = ">=3.0" },
     { name = "huggingface-hub", specifier = ">=0.26" },
+    { name = "liger-kernel", marker = "sys_platform == 'linux'" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "peft", specifier = ">=0.13" },
     { name = "pillow", specifier = ">=11.0" },
@@ -924,6 +926,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
+]
+
+[[package]]
+name = "liger-kernel"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+    { name = "triton" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1a/6b/5d4b965e411d35fb1f533d4b2a2a9a1e99f4bf3fc751ab22b989159c2a18/liger_kernel-0.8.1.tar.gz", hash = "sha256:ae708a8079d2283070128e38497aa2976294d822e21a0f21ea86e63c67334a8b", size = 4157449, upload-time = "2026-07-23T00:01:37.77Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/dc/68b2d8400e97d64412536bf3bd72c8890238013ebf75b95598c56b3b10a8/liger_kernel-0.8.1-py3-none-any.whl", hash = "sha256:90836c1e9de22a1c57a640775fb79151ea704748cf9c3f6658dddaa06fff1989", size = 506445, upload-time = "2026-07-23T00:01:35.995Z" },
 ]
 
 [[package]]

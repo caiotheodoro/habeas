@@ -50,7 +50,10 @@ set -euo pipefail
 # jinja2>=3.1.0 required by transformers' apply_chat_template; the DLVM
 # image ships 3.0.3 (found via an actual smoke run — ImportError
 # otherwise, see docs/DECISIONS.md).
-pip3 install "jinja2>=3.1.0" transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
+# liger-kernel: fused CE loss avoids trl's default fp32 lm_head upcast,
+# which OOM'd an L4 with a fixed ~4.74GiB allocation regardless of
+# max_length/image size (found via an actual smoke run).
+pip3 install "jinja2>=3.1.0" transformers peft trl accelerate datasets bitsandbytes liger-kernel click pydantic pillow numpy
 # One of the above transitively pulled torchaudio 2.11.0 while the image's
 # torch stayed at 2.9.1 — an ABI break (peft -> transformers -> ... ->
 # torchaudio's compiled extension: "undefined symbol"). We don't use audio

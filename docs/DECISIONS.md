@@ -149,6 +149,44 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 Stage 0 — L4 VRAM fit: liger-kernel fused loss
+- Decision: after fixing the driver/torchaudio/jinja2 issues, the smoke
+  run reached the actual training step and hit
+  `torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 4.74 GiB`
+  inside trl's default chunked cross-entropy loss (`h.float() @
+  w.float().t()` in `sft_trainer.py`). Two attempted workarounds — halving
+  `max_length` (4096→1024) and downscaling the rendered image
+  (700×920→224×224) — both produced the **identical** 4.74GiB allocation
+  failure, proving the OOM wasn't driven by sequence length or image size
+  at all: it's the cost of upcasting the full `lm_head` weight matrix
+  (`vocab_size × hidden_size × 4 bytes`) to fp32 once per loss chunk, a
+  fixed cost independent of the batch. On top of the 4-bit model's ~17GB
+  footprint, that fixed chunk doesn't fit an L4's ~22GB usable VRAM. Fixed
+  by enabling `use_liger_kernel=True` in both `SFTConfig` (`train_cli.py`)
+  and `GRPOConfig` (`modal_rlvr.py`) — Liger Kernel's fused CE loss
+  computes cross-entropy without ever materializing the full fp32 logits
+  matrix, the actual fix rather than a sequence/image-size workaround.
+  Added `liger-kernel` to `model/pyproject.toml` (with a `sys_platform ==
+  'linux'` marker — it transitively pulls `triton`, which has no macOS
+  wheel and broke local `uv sync` entirely until the marker was added),
+  `cloud/Dockerfile`, and `cloud/gcp_spot.sh`.
+- Rationale: this is a genuine hardware-fit problem for a 27B multimodal
+  model on a 24GB-class GPU, not a code bug — the fix needed to actually
+  reduce the loss computation's memory footprint, not just shrink inputs
+  that weren't the bottleneck. Reverted the earlier (ineffective)
+  max_length/image-downscale changes' rationale accordingly — they're kept
+  as-is since they're still reasonable smoke-mode economy, just weren't
+  the fix for this particular OOM.
+- Evidence: identical `Tried to allocate 4.74 GiB` message across 3 live
+  smoke attempts with varying `max_length`/image size (ruling out those
+  variables empirically, not by inspection); `liger-kernel` installs and
+  imports cleanly on the live instance; `model` tests 17/17 green after
+  the `sys_platform` marker fix restored local `uv sync`.
+- Alternatives rejected: a bigger/different GPU for the smoke gate
+  specifically — defeats the point of a *cheap* validation gate; Liger
+  Kernel is the standard, well-supported fix for exactly this failure mode
+  and required no infrastructure change.
+
 ## 2026-08-18 — P4 Stage 0 — gcp_spot.sh had no GPU driver at all
 - Decision: after the torchvision/max_length fixes, the smoke run got much
   further (loading model weights) before failing with `ValueError: Your

@@ -16,10 +16,13 @@ WORKDIR /workspace
 # processor that hard-requires it even for image-only use (found via an
 # actual smoke run — ImportError otherwise; a sibling repo hit the same
 # gap independently).
+# liger-kernel: fused CE loss avoids trl's default fp32 lm_head upcast,
+# a fixed ~4.74GiB allocation regardless of sequence/image size that OOM'd
+# an L4 (found via an actual GCP smoke run — see docs/DECISIONS.md).
 RUN pip install --no-cache-dir \
     "torch>=2.6" "torchvision" "transformers>=4.55" "peft>=0.13" "trl>=0.16" \
     "accelerate>=1.0" "datasets>=3.0" "pillow>=11" "huggingface_hub>=0.26" \
-    "bitsandbytes>=0.44" "click>=8.1" "pydantic>=2.7" "numpy>=1.26"
+    "bitsandbytes>=0.44" "liger-kernel" "click>=8.1" "pydantic>=2.7" "numpy>=1.26"
 
 COPY . .
 

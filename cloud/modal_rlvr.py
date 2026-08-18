@@ -82,6 +82,10 @@ def rlvr(prompts: bytes, base_adapter: str, iters: int = 200,
             epsilon=0.2, epsilon_high=1.0,
             num_generations=group_size,
             max_steps=5 if smoke else iters,
+            # Same fixed fp32-lm_head-upcast OOM as SFT (see train_cli.py's
+            # comment / docs/DECISIONS.md) applies here too — GRPOConfig
+            # exposes the same fused-loss escape hatch.
+            use_liger_kernel=True,
         ),
         train_dataset=ds,
     )
