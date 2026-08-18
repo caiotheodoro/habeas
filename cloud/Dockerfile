@@ -12,4 +12,9 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
-CMD ["python", "-m", "habeas_model.train"]
+# habeas_forge and habeas_model are uv "package = false" projects (no build
+# backend, PYTHONPATH-based imports — matches the local test/CLI pattern in
+# forge/tests/conftest.py and model/tests/conftest.py).
+ENV PYTHONPATH=/workspace/model/src:/workspace/forge/src
+
+CMD ["python", "-m", "habeas_model.train_cli"]

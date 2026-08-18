@@ -37,6 +37,71 @@ only with measured evidence.
   methodology without any privacy surface.
 - Evidence: generate.py (placeholder names/numbers).
 
+## 2026-08-17 — P4 — Modal SFT/RLVR wiring + shared train_cli
+- Decision: `cloud/modal_train.py`'s `train()` previously ignored its own
+  `data: bytes` param and trained on a hardcoded empty dataset. Fixed by
+  extracting the actual training logic into a new, plain,
+  filesystem-path-based `habeas_model.train_cli.run_sft(data_path, out_dir,
+  smoke, epochs)` — shared by both `modal_train.py` (bytes → temp file →
+  `run_sft` → `vol.commit()`) and a new `train_cli.py` CLI entrypoint used
+  by the GCP spot fallback, so the two cloud paths can't silently diverge
+  (docs/TRAINING_PLAN.md §1's one-code-path reproducibility requirement).
+  `run_sft` decodes each SFT record's `image_b64` into a `PIL.Image` under
+  an `images` column (required by TRL's multimodal `SFTTrainer` collator —
+  not optional) and passes `processing_class=AutoProcessor(...)`, not just
+  a tokenizer. Smoke mode caps both the data slice (8 records) and step
+  count (`max_steps=5`) — belt-and-suspenders.
+- New `cloud/modal_rlvr.py` (didn't exist in habeas before — specula's own
+  copy is still a stub): GRPO RLVR against `habeas_model.rlvr_reward.
+  oracle_reward_func`, which wraps `habeas_model.schema.to_forge_verdict` +
+  `habeas_forge.score.reward` into TRL's `reward_funcs(completions,
+  **kwargs)` signature. Uses `GRPOConfig(loss_type="dr_grpo", epsilon=0.2,
+  epsilon_high=1.0)` — Dr. GRPO and DAPO's decoupled clip are both native
+  TRL options (verified against installed `trl==0.24.0`), no custom
+  subclass needed. DAPO's dynamic sampling (drop/resample zero-reward-
+  variance prompt groups) is **not** natively supported by TRL and is
+  deliberately not implemented in v1 — ships without it, monitoring
+  TRL's own `frac_reward_zero_std` metric instead; a custom `GRPOTrainer`
+  subclass is a documented follow-up only if that metric shows it matters
+  empirically. Loads the SFT adapter via `PeftModel.from_pretrained(base,
+  base_adapter, is_trainable=True)`, never the raw base model.
+- Fixed `cloud/Dockerfile`'s `CMD` (referenced a nonexistent
+  `habeas_model.train` module) to `habeas_model.train_cli`, added `ENV
+  PYTHONPATH` for the two `package = false` projects. Fixed
+  `cloud/gcp_spot.sh`'s startup script (same dangling-module bug) to run
+  `dataset_builder build` then `train_cli.py`; also fixed a separate real
+  gap found while doing this — `data/` is gitignored, so a fresh clone on
+  a GCE box has no pilot/train/val files at all — added the missing
+  `pilot`/`split` regeneration step (seed 7, matching the Stage 1 entry
+  above) before dataset building.
+- Also fixed (unrelated pre-existing issue, found incidentally while
+  testing these files import cleanly): `modal.gpu.L4(count=1)` is
+  deprecated against the installed Modal SDK (1.2.6) — `DeprecationError:
+  use gpu="L4" instead`. Updated both `modal_train.py` and the new
+  `modal_rlvr.py` to the current `gpu="L4"` string form.
+- Rationale: one training code path (not two), correct multimodal data
+  wiring (the `images` column gap would have silently crashed or trained
+  on garbage at real-run time), and RLVR built on native TRL features
+  rather than reinvented ones.
+- Evidence: `model/tests/test_train_cli.py` (`_load_sft_records` decode +
+  smoke-cap tests, isolated from the actual untestable-without-GPU
+  `run_sft` training call), `model/tests/test_rlvr_reward.py`
+  (`oracle_reward_func` batch-alignment + unparseable-completion tests) —
+  17/17 model tests green total. Both `cloud/modal_train.py` and
+  `cloud/modal_rlvr.py` verified to import cleanly (no errors, no
+  deprecation warnings) with the locally-installed Modal SDK; `bash -n`
+  clean on `gcp_spot.sh`. Independently reviewed via `opencode run` —
+  traced the gcp_spot.sh path-consistency (cd forge/cd .. sequencing) and
+  the TRL reward_funcs kwarg-passing convention, found no bugs in what it
+  examined before the review process ended without a final written verdict
+  (a recurring flakiness this session, not specific to this diff).
+- Flagged, not verified: real multimodal image-column format against the
+  actual Qwen3.8-27B processor (no GPU/model weights available locally —
+  same flag as the original P4 plan); whether TRL 0.24.0's `GRPOTrainer`
+  genuinely supports multimodal `images` columns end-to-end (its GRPO
+  implementation has historically been text-first) — a smoke-run-time risk
+  to watch, not resolvable by static review.
+
 ## 2026-08-17 — P4 — dataset_builder teacher-trace source + RLVR prompts
 - Decision: `build_record(task, target_source="oracle"|"teacher", teacher=
   None)` — default `"oracle"` unchanged; `"teacher"` calls a `Provider`

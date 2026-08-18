@@ -153,18 +153,33 @@ No partial-credit promotion. A checkpoint that clears 4/5 targets stays
 
 ## 8. Concrete next actions
 
-1. Resolve Stage 0 (smoke LoRA gate) — check specula's status before
-   duplicating spend, or explicitly decide to run habeas's own.
-2. Scale up pilot data (Stage 1) — no gate dependency, can start now.
-3. Build the teacher-distillation trace pipeline + fix `modal_train.py`'s
-   unused-`data` bug (Stage 2) — no gate dependency for the *code*, only
-   for the *real training run*.
-4. Build `cloud/modal_rlvr.py` for habeas (currently doesn't exist) with
-   the reward function reusing `habeas_forge.score` (Stage 3) — code-only,
-   no gate dependency.
-5. Wire a real `Provider` (local vLLM/MLX or frontier API) into
-   `benchmark_eval` for actual head-to-head numbers once a trained
-   checkpoint exists.
+**Done (code-only round, 2026-08-17 — see docs/DECISIONS.md for detail on
+each):**
+- Stage 1: training corpus scaled to n=2000 (seed 7).
+- `score_predictions`/`summarize` verdict-consistency fix + `reward()` for
+  RLVR (`forge/src/habeas_forge/score.py`).
+- Stage 2 code: `dataset_builder.build_record(target_source="teacher",
+  teacher=...)` verifier-filtered trace path; `modal_train.py`'s
+  unused-`data` bug fixed via a shared `habeas_model.train_cli.run_sft`.
+- Stage 3 code: `cloud/modal_rlvr.py` built (GRPO/Dr.GRPO/DAPO-clip against
+  the oracle reward), `build_rlvr_prompt`/`build_rlvr_prompts` (distinct
+  from the SFT trace file).
+- `cloud/gcp_spot.sh`/`cloud/Dockerfile` dangling-module bugs fixed.
 
-Items 2–4 are independent of each other and of Stage 0 — a reasonable
+**Still open:**
+1. Resolve Stage 0 (smoke LoRA gate) — check specula's status before
+   duplicating spend, or explicitly decide to run habeas's own. **Nothing
+   past this point can actually execute for real** (everything above is
+   built and unit-tested, but untested against a real GPU/model).
+2. Wire a real `Provider` (local vLLM/MLX or frontier API) into
+   `benchmark_eval`/the teacher-distillation path — current tests use
+   in-repo mock/test-double providers only (a deliberate scope cut this
+   round — the only already-authenticated live-model path in this
+   environment, the `opencode` CLI, is too slow/agentic for volume use).
+3. Verify the real multimodal `images` column format against the actual
+   Qwen3.8-27B processor, and confirm TRL 0.24.0's `GRPOTrainer` genuinely
+   supports multimodal inputs end-to-end — both flagged as unverifiable
+   without GPU access, real risks for the first real training run.
+
+Items 2–3 are independent of each other and of Stage 0 — a reasonable
 fanout for the next work session once scoped further.

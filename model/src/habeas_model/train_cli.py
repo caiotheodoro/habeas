@@ -1,0 +1,89 @@
+"""QLoRA SFT training, shared by the Modal app and the GCP spot fallback.
+
+`run_sft` is a plain, filesystem-path-based function — no Modal/GCP-specific
+code — so both `cloud/modal_train.py` (bytes -> temp file -> run_sft ->
+volume commit) and this module's own CLI (used by `cloud/gcp_spot.sh`) call
+the exact same training logic. Keeping one code path here is required by
+docs/TRAINING_PLAN.md §1's reproducibility contract: one `habeas_model`
+commit SHA to record, not two silently-diverging training implementations.
+
+Input: a JSONL file matching `dataset_builder.build_record()`'s output
+shape (`{"task_id", "messages": [...], "image_b64": str}`). If starting
+from a raw forge `Task` JSONL instead, build the SFT JSONL first via
+`python -m habeas_model.dataset_builder build --tasks-file ... --out ...`.
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import json
+
+import click
+
+
+def _load_sft_records(data_path: str, smoke: bool) -> list[dict]:
+    records = []
+    with open(data_path) as f:
+        for line in f:
+            if line.strip():
+                records.append(json.loads(line))
+    if smoke:
+        records = records[:8]
+    from PIL import Image
+    for r in records:
+        img_b64 = r.pop("image_b64", None)
+        r["images"] = [Image.open(io.BytesIO(base64.b64decode(img_b64)))] if img_b64 else []
+    return records
+
+
+def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) -> None:
+    """Train a QLoRA adapter on Qwen3.8-27B from an SFT-record JSONL.
+
+    `smoke=True` caps both the data slice (first 8 records) and the step
+    count (max_steps=5) — belt-and-suspenders so a misconfigured smoke run
+    can't accidentally become a full, costly training pass.
+    """
+    from datasets import Dataset
+    from peft import LoraConfig, get_peft_model
+    from transformers import AutoModelForMultimodalLM, AutoProcessor
+    from trl import SFTConfig, SFTTrainer
+
+    records = _load_sft_records(data_path, smoke)
+    ds = Dataset.from_list(records)  # columns: task_id, messages, images
+
+    model = AutoModelForMultimodalLM.from_pretrained(
+        "Qwen/Qwen3.8-27B", device_map="auto", torch_dtype="bfloat16",
+        load_in_4bit=not smoke)
+    processor = AutoProcessor.from_pretrained("Qwen/Qwen3.8-27B")
+    model = get_peft_model(model, LoraConfig(
+        r=32, lora_alpha=64, lora_dropout=0.05,
+        target_modules="all-linear", task_type="CAUSAL_LM"))
+
+    trainer = SFTTrainer(
+        model=model, processing_class=processor,
+        args=SFTConfig(
+            output_dir=out_dir, max_seq_length=4096,
+            per_device_train_batch_size=1, gradient_accumulation_steps=4,
+            gradient_checkpointing=True, bf16=True, logging_steps=10,
+            num_train_epochs=1 if smoke else epochs,
+            max_steps=5 if smoke else -1,
+        ),
+        train_dataset=ds,
+    )
+    trainer.train()
+    trainer.save_model(f"{out_dir}-final")
+
+
+@click.command()
+@click.option("--data", "data_path", required=True, help="SFT-record JSONL path")
+@click.option("--out", "out_dir", required=True, help="checkpoint output dir")
+@click.option("--smoke", is_flag=True, default=False)
+@click.option("--epochs", default=2)
+def main(data_path: str, out_dir: str, smoke: bool, epochs: int) -> None:
+    run_sft(data_path, out_dir, smoke=smoke, epochs=epochs)
+    click.echo(f"wrote checkpoint to {out_dir}-final")
+
+
+if __name__ == "__main__":
+    main()
