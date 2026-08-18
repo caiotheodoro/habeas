@@ -112,18 +112,32 @@ pip3 install "jinja2>=3.1.0" transformers peft trl accelerate datasets bitsandby
 # that would need re-verifying every image update. Found via an actual
 # smoke run, see docs/DECISIONS.md.
 pip3 uninstall -y torchaudio || true
-cd /root && git clone https://github.com/caiotheodoro/habeas.git && cd habeas
+# Idempotent: GCE re-runs the startup-script on every boot, including a
+# restart after a preemptible-VM stop/preempt cycle (the boot disk, and
+# anything on it — the repo clone, generated data, and any partial
+# checkpoints under /root/checkpoints — persists across that as long as
+# the instance itself isn't deleted). Re-cloning/re-pulling here would
+# risk resuming a training run against a different code version than it
+# started with, so skip everything that already exists instead.
+[ -d /root/habeas ] || (cd /root && git clone https://github.com/caiotheodoro/habeas.git)
+cd /root/habeas
 export PYTHONPATH=/root/habeas/model/src:/root/habeas/forge/src
 $([ -n "$HF_TOKEN" ] && echo "export HF_TOKEN=$HF_TOKEN")
 # data/ is gitignored: a fresh clone has no pilot/train/val files, so
 # regenerate deterministically (seed 7, matches docs/DECISIONS.md P4 Stage
-# 1) instead of assuming a prebuilt data artifact exists on the box.
+# 1) instead of assuming a prebuilt data artifact exists on the box. Seed
+# is fixed, so this is byte-identical and safe to skip on a restart.
 cd forge
-python3 -m habeas_forge.cli pilot --seed 7 --n $PILOT_N --out data/pilot.jsonl
-python3 -m habeas_forge.cli split --pilot data/pilot.jsonl --out-train data/train.jsonl --out-val data/val.jsonl
+[ -f data/train.jsonl ] || {
+  python3 -m habeas_forge.cli pilot --seed 7 --n $PILOT_N --out data/pilot.jsonl
+  python3 -m habeas_forge.cli split --pilot data/pilot.jsonl --out-train data/train.jsonl --out-val data/val.jsonl
+}
 cd ..
-python3 -m habeas_model.dataset_builder build --tasks-file forge/data/train.jsonl --out data/sft-train.jsonl
-python3 -m habeas_model.train_cli --data data/sft-train.jsonl --out /root/checkpoints/sft $TRAIN_CLI_FLAG 2>&1 | tee /root/train.log
+[ -f data/sft-train.jsonl ] || python3 -m habeas_model.dataset_builder build --tasks-file forge/data/train.jsonl --out data/sft-train.jsonl
+# train_cli itself resumes from the last checkpoint under --out if one
+# exists (see model/src/habeas_model/train_cli.py's run_sft) — this call
+# is identical whether it's a fresh start or a post-preemption restart.
+python3 -m habeas_model.train_cli --data data/sft-train.jsonl --out /root/checkpoints/sft $TRAIN_CLI_FLAG 2>&1 | tee -a /root/train.log
 EOF
 
 BOOT_DISK_SIZE=${GCP_BOOT_DISK_SIZE:-300GB}

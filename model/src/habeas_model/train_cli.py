@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 
 import click
 
@@ -51,7 +52,7 @@ def _load_sft_records(data_path: str, smoke: bool) -> list[dict]:
 
 
 def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
-           max_steps: int | None = None) -> None:
+           max_steps: int | None = None, save_steps: int = 20) -> None:
     """Train a QLoRA adapter on Qwen3.8-27B from an SFT-record JSONL.
 
     `smoke=True` caps both the data slice (first 8 records) and image size
@@ -63,10 +64,22 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
     full-resolution images — the intended way to validate real-scale GPU
     memory fit on a small task count before committing to a full run (the
     smoke config is deliberately too small to answer that question).
+
+    Resumable: saves a checkpoint to `out_dir` every `save_steps` (default
+    20, keeping the 3 most recent). If `out_dir` already has a checkpoint
+    when called — e.g. the process was interrupted (preemption) and
+    restarted, `out_dir` persisting on the same boot disk across a GCE
+    preemptible-VM stop/restart cycle — training resumes from there instead
+    of starting over. Matters most for a real full run: only preemptible
+    A100 quota is available in this project as of 2026-08-18 (see
+    docs/DECISIONS.md), and a real run is long enough (~30hr estimated at
+    the observed ~135s/step) that losing all progress to one preemption
+    would be expensive.
     """
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
     from transformers import AutoModelForMultimodalLM, AutoProcessor, BitsAndBytesConfig
+    from transformers.trainer_utils import get_last_checkpoint
     from trl import SFTConfig, SFTTrainer
 
     records = _load_sft_records(data_path, smoke)
@@ -108,10 +121,14 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
             gradient_checkpointing=True, bf16=True, logging_steps=10,
             num_train_epochs=1 if smoke else epochs,
             max_steps=max_steps if max_steps is not None else (5 if smoke else -1),
+            save_strategy="steps", save_steps=save_steps, save_total_limit=3,
         ),
         train_dataset=ds,
     )
-    trainer.train()
+    resume_from = get_last_checkpoint(out_dir) if os.path.isdir(out_dir) else None
+    if resume_from:
+        print(f"resuming from checkpoint: {resume_from}")
+    trainer.train(resume_from_checkpoint=resume_from)
     trainer.save_model(f"{out_dir}-final")
 
 
@@ -123,8 +140,14 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
 @click.option("--max-steps", default=None, type=int,
              help="Bound a run to N steps regardless of --smoke (for a "
                   "real-config, small-data GPU-memory validation).")
-def main(data_path: str, out_dir: str, smoke: bool, epochs: int, max_steps: int | None) -> None:
-    run_sft(data_path, out_dir, smoke=smoke, epochs=epochs, max_steps=max_steps)
+@click.option("--save-steps", default=20,
+             help="Checkpoint interval — also the resume granularity if "
+                  "the run is interrupted and restarted against the same "
+                  "--out dir.")
+def main(data_path: str, out_dir: str, smoke: bool, epochs: int, max_steps: int | None,
+         save_steps: int) -> None:
+    run_sft(data_path, out_dir, smoke=smoke, epochs=epochs, max_steps=max_steps,
+           save_steps=save_steps)
     click.echo(f"wrote checkpoint to {out_dir}-final")
 
 

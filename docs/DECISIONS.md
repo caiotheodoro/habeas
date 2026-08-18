@@ -149,6 +149,47 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — Checkpoint-resume before the real full run
+- Decision: before launching a real full SFT run, added
+  resume-from-checkpoint support: `train_cli.run_sft` now sets
+  `save_strategy="steps", save_steps=20 (default), save_total_limit=3` on
+  `SFTConfig`, and checks `transformers.trainer_utils.get_last_checkpoint
+  (out_dir)` before calling `trainer.train()` — if a checkpoint already
+  exists under `--out`, training resumes from there instead of restarting.
+  `cloud/gcp_spot.sh`'s startup script was made idempotent to match: it
+  now skips the `git clone` / data-regeneration steps if they already
+  exist (a fresh clone would risk resuming against a different code
+  version than the run started with; data regeneration is seed-fixed and
+  byte-identical, so skipping it is just a restart-speed optimization,
+  not a correctness one), and appends to `/root/train.log` instead of
+  overwriting it. New `--save-steps` CLI flag exposes the interval.
+- Rationale: at the observed ~135s/step, a real full run (full corpus, 2
+  epochs) is an estimated ~30 hours, and only *preemptible* A100 quota is
+  approved in this project — realistically several preemption-interrupted
+  restarts, not one clean run. GCE re-runs the startup-script on every
+  boot (including a restart after a preemptible-VM stop cycle), and the
+  boot disk (repo, generated data, `/root/checkpoints`) persists across
+  that as long as the instance itself isn't deleted — so the recovery
+  path is: notice the instance is `TERMINATED`, run `gcloud compute
+  instances start <name>`, and the startup-script + `run_sft`'s resume
+  logic pick training back up automatically. A full managed-instance-group
+  auto-healing setup was considered and deliberately not built — bigger
+  scope than warranted for a run this session is actively monitoring
+  anyway; manual restart-on-preemption is the accepted fallback, made safe
+  by this resume logic rather than by auto-recreation.
+- Evidence: `model/tests/` still 17/17 green (the resume-detection guard
+  itself — `os.path.isdir` + `get_last_checkpoint` — was sanity-checked
+  standalone against both an existing and a missing directory; the actual
+  GPU-dependent `trainer.train(resume_from_checkpoint=...)` path can't be
+  unit-tested without a GPU, consistent with the rest of `run_sft`).
+- Alternatives rejected: syncing checkpoints to a GCS bucket instead of
+  relying on local-disk persistence — the classic-preemptible instance
+  model already persists the boot disk across a stop cycle (confirmed:
+  it's not deleted unless the instance resource itself is deleted), so a
+  second, more complex persistence layer wasn't needed for this case;
+  would reconsider if the run ever needs to move to a Spot VM with
+  `--instance-termination-action=DELETE` instead.
+
 ## 2026-08-18 — P4 — REAL CONFIG VALIDATED ON A100 ✓
 - Decision: after fixing the boot-disk-size bug (previous entry), reran
   `VALIDATE=true GPU_TYPE=nvidia-tesla-a100 PREEMPTIBLE=true` (only
