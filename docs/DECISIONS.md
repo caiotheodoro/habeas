@@ -149,6 +149,71 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 Stage 0 — Smoke-LoRA gate: quantization API bug found + fixed
+- Decision: fixed `train_cli.run_sft` and `modal_rlvr.rlvr`'s model loading
+  — both passed a bare `load_in_4bit=True` kwarg to
+  `AutoModelForMultimodalLM.from_pretrained`, which the installed
+  `transformers` version rejects outright: `TypeError:
+  Qwen3_5ForConditionalGeneration.__init__() got an unexpected keyword
+  argument 'load_in_4bit'`. Fixed to `quantization_config=
+  BitsAndBytesConfig(load_in_4bit=True)`. Also fixed the deprecated
+  `torch_dtype=` kwarg to `dtype=` in both places (a warning, not a crash,
+  but flagged during the same run). Added `bitsandbytes` to
+  `model/pyproject.toml`'s dependencies (was only ever installed via the
+  Dockerfile/gcp_spot.sh pip lines, not declared for local dev).
+- Rationale: this is exactly what the smoke-LoRA gate exists to catch — a
+  static-analysis/code-review pass couldn't have found this (the earlier
+  Plan sub-agent's design correctly flagged 4-bit as required for VRAM, but
+  had no way to verify the exact `from_pretrained` kwarg contract against
+  the real installed transformers version without executing it on real
+  hardware).
+- Evidence: caught via an actual GCP L4 on-demand smoke run (instance
+  `habeas-train-0818-0236`, us-east1-b, project
+  `project-ddef13eb-b20f-47e0-af0` — Modal was abandoned for this attempt
+  after repeated local client connection instability, unrelated to the
+  training code itself; see the same date's Modal-vs-GCP entry below for
+  that context). Full traceback captured via `gcloud compute ssh ...
+  --command='tail /root/train.log'`. Fix applied, redeployed to the same
+  running instance for re-verification (see follow-up entry once the rerun
+  completes).
+- Alternatives rejected: none — this is a straightforward API-contract fix,
+  not a design decision.
+
+## 2026-08-18 — P4 Stage 0 — Modal local-client instability -> GCP pivot
+- Decision: after ~2 hours of Modal `modal run --detach` attempts
+  consistently crashing 2-4 minutes into the image build (an asyncio/h2/
+  grpclib `AttributeError` on 'H2Connection' object, reproduced across the
+  system Python 3.9 install AND a from-scratch clean Python 3.12 venv, both
+  authenticated correctly, both showing identical remote-side build
+  progress via streamed logs before crashing) — while all short one-shot
+  Modal CLI calls (`app list`, `container list`, `profile current`) worked
+  reliably throughout — concluded this is local-environment network/OS
+  behavior (plausibly background-process socket throttling) specific to
+  this automated session, not a Modal service issue or a bug in
+  `cloud/modal_train.py`/`modal_rlvr.py`. Pivoted to the GCP spot/on-demand
+  fallback (`cloud/gcp_spot.sh`), which runs entirely server-side via a
+  startup script — no persistent local streaming connection required,
+  sidestepping the failure mode entirely. GCP's own smoke run succeeded
+  through pip install, data generation, and model download on the first
+  code-complete attempt (the only failure was the `load_in_4bit` bug
+  above, a real code issue, not an infra one).
+- Also found and fixed along the way: `gcp_spot.sh`'s `--metadata=` flag
+  broke on commas in embedded comments (gcloud parses `--metadata` as a
+  comma-separated dict) — switched to `--metadata-from-file`, which is also
+  the more robust pattern generally; GPU-attached GCP VMs require
+  `--maintenance-policy=TERMINATE` even when non-preemptible (no live
+  migration support for GPUs) — the script's new `PREEMPTIBLE` toggle
+  handles this correctly either way; this project's actual GPU quota was 0
+  (not the "1000" HANDOFF.md previously claimed) until manually requested
+  via the console — see HANDOFF.md's corrected environment section; the
+  first preemptible attempt that did get scheduled was preempted mid-run
+  before completing, so the script now defaults to on-demand
+  (`PREEMPTIBLE=false`) for reliability on short validation runs, with spot
+  available via an env var for later real (longer, costlier) training.
+- Evidence: `docs/HANDOFF.md` environment section corrected; `cloud/
+  gcp_spot.sh` diff (metadata-from-file, PREEMPTIBLE toggle, SMOKE-scoped
+  PILOT_N=20).
+
 ## 2026-08-17 — P4 Stage 2 — Verdict-consistency scoring fix + RLVR reward()
 - Decision: `score_predictions` (CONTRACTS.md §2's scorer) previously only
   compared violation-instance sets (`caught`/`total`/`fp`) and never

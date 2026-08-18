@@ -15,6 +15,7 @@ dependencies = [
     "huggingface_hub>=0.26",
     "click>=8.1",
     "numpy>=1.26",
+    "bitsandbytes>=0.44",
 ]
 
 [project.optional-dependencies]

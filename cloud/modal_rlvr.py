@@ -29,11 +29,13 @@ no upper bound):
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import modal
 
 app = modal.App("habeas-rlvr")
 vol = modal.Volume.from_name("habeas-checkpoints", create_if_missing=True)
-image = modal.Image.from_dockerfile("Dockerfile")
+image = modal.Image.from_dockerfile(str(Path(__file__).parent / "Dockerfile"))
 
 
 @app.function(image=image, gpu="L4", volumes={"/checkpoints": vol},
@@ -47,7 +49,7 @@ def rlvr(prompts: bytes, base_adapter: str, iters: int = 200,
     from datasets import Dataset
     from peft import PeftModel
     from PIL import Image
-    from transformers import AutoModelForMultimodalLM, AutoProcessor
+    from transformers import AutoModelForMultimodalLM, AutoProcessor, BitsAndBytesConfig
     from trl import GRPOConfig, GRPOTrainer
 
     from habeas_model.rlvr_reward import oracle_reward_func
@@ -61,8 +63,12 @@ def rlvr(prompts: bytes, base_adapter: str, iters: int = 200,
                        for b in r.pop("images")]
     ds = Dataset.from_list(records)  # columns: task_id, prompt, images, expected_verdict
 
+    # Same VRAM/API constraints as train_cli.run_sft (see its comment and
+    # docs/DECISIONS.md): 4-bit required to fit an L4, quantization_config
+    # not a bare load_in_4bit kwarg, dtype= not torch_dtype=.
     base = AutoModelForMultimodalLM.from_pretrained(
-        "Qwen/Qwen3.8-27B", device_map="auto", torch_dtype="bfloat16")
+        "Qwen/Qwen3.8-27B", device_map="auto", dtype="bfloat16",
+        quantization_config=BitsAndBytesConfig(load_in_4bit=True))
     model = PeftModel.from_pretrained(base, base_adapter, is_trainable=True)
     processor = AutoProcessor.from_pretrained("Qwen/Qwen3.8-27B")
 

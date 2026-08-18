@@ -46,15 +46,22 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) 
     """
     from datasets import Dataset
     from peft import LoraConfig, get_peft_model
-    from transformers import AutoModelForMultimodalLM, AutoProcessor
+    from transformers import AutoModelForMultimodalLM, AutoProcessor, BitsAndBytesConfig
     from trl import SFTConfig, SFTTrainer
 
     records = _load_sft_records(data_path, smoke)
     ds = Dataset.from_list(records)  # columns: task_id, messages, images
 
+    # 4-bit is about VRAM (27B params in bf16 is ~54GB, doesn't fit an L4's
+    # 24GB) — orthogonal to smoke vs. real, so always on regardless of
+    # `smoke` (a pre-existing `load_in_4bit=not smoke` bug here would have
+    # OOM'd every smoke run on real hardware). The installed transformers
+    # version rejects a bare `load_in_4bit=` kwarg on from_pretrained
+    # (TypeError: unexpected keyword argument) — found by an actual smoke
+    # run on GCP, see docs/DECISIONS.md — needs quantization_config instead.
     model = AutoModelForMultimodalLM.from_pretrained(
-        "Qwen/Qwen3.8-27B", device_map="auto", torch_dtype="bfloat16",
-        load_in_4bit=not smoke)
+        "Qwen/Qwen3.8-27B", device_map="auto", dtype="bfloat16",
+        quantization_config=BitsAndBytesConfig(load_in_4bit=True))
     processor = AutoProcessor.from_pretrained("Qwen/Qwen3.8-27B")
     model = get_peft_model(model, LoraConfig(
         r=32, lora_alpha=64, lora_dropout=0.05,

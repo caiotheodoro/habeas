@@ -80,8 +80,12 @@ cd forge && uv run python -m habeas_forge.cli leakprobe --train data/train.jsonl
 - **Modal**: profile `dev-caiotheodoro` (token verified 2026-08-17, $30/mo free
   credit, L4 24GB). Volume `habeas-checkpoints`.
 - **gcloud**: active account `dev.caiotheodoro@gmail.com`, project
-  `cambio-curitiba-498923`, Compute API enabled, GPU quota 1000 (spot L4
-  fallback).
+  `cambio-curitiba-498923`, Compute API enabled. **GPU quota is actually 0
+  globally** (`GPUS_ALL_REGIONS` limit 0.0, confirmed 2026-08-17 via
+  `gcloud compute project-info describe` — no GPU quota line present at
+  all) — the "GPU quota 1000" claimed here previously was wrong/stale.
+  `cloud/gcp_spot.sh` cannot actually launch an L4 instance until a quota
+  increase is requested and approved (manual GCP process, not scriptable).
 - uv + Python ≥3.11; macOS: `make sync` runs `chflags -R nohidden .venv`.
 
 ## Parallel repos
