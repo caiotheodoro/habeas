@@ -14,50 +14,28 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Protocol
 
-from habeas_forge.schema import Severity, Task, Verdict, Violation, ViolationType
+from habeas_forge.schema import Task, Verdict
 from habeas_forge.score import score_predictions, summarize
 
-from .dataset_builder import _user_content
-from .schema import SYSTEM_PROMPT, parse
+from .dataset_builder import Provider, _user_content, build_record
+from .schema import SYSTEM_PROMPT, to_forge_verdict
 
-
-class Provider(Protocol):
-    """Minimal adapter: raw model completion for one task."""
-
-    def complete(self, system: str, user: str, image_b64: str) -> str:
-        ...
-
-
-def _to_forge_verdict(raw: str) -> Verdict | None:
-    out = parse(raw)
-    if out is None:
-        return None
-    violations: list[Violation] = []
-    for v in out.violations:
-        try:
-            violations.append(Violation(
-                type=ViolationType(v.type), severity=Severity(v.severity),
-                field=v.field, observed=v.observed, expected=v.expected,
-                cfr=v.cfr, correction=v.correction,
-            ))
-        except ValueError:
-            continue  # unrecognized type/severity: dropped, not scored as a match
-    verdict = out.verdict if out.verdict in ("PASS", "FLAG") else "FLAG"
-    return Verdict(verdict=verdict, violations=violations)
+# Back-compat alias: to_forge_verdict moved to habeas_model.schema (shared
+# by dataset_builder's teacher-trace filtering too) so both modules use one
+# raw-text -> Verdict converter instead of duplicating the parse logic.
+_to_forge_verdict = to_forge_verdict
 
 
 def _predict_one(task: Task, provider: Provider) -> Verdict | None:
     img = None
     try:
-        from .dataset_builder import build_record
         img = build_record(task)["image_b64"]
     except Exception:
         img = ""
     user = _user_content(task, img)
     raw = provider.complete(SYSTEM_PROMPT, user, img)
-    return _to_forge_verdict(raw)
+    return to_forge_verdict(raw)
 
 
 def _load_tasks(path: str) -> list[Task]:

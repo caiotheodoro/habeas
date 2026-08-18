@@ -37,6 +37,53 @@ only with measured evidence.
   methodology without any privacy surface.
 - Evidence: generate.py (placeholder names/numbers).
 
+## 2026-08-17 — P4 — dataset_builder teacher-trace source + RLVR prompts
+- Decision: `build_record(task, target_source="oracle"|"teacher", teacher=
+  None)` — default `"oracle"` unchanged; `"teacher"` calls a `Provider`
+  (moved from `benchmark_eval.py` into `dataset_builder.py`, both now
+  reuse one definition — `benchmark_eval` imports it back), parses via
+  `habeas_model.schema.to_forge_verdict` (promoted from `benchmark_eval.
+  _to_forge_verdict`, kept as a back-compat alias there), and
+  verifier-filters per docs/methodology.md's "SFT cold-start on
+  verifier-filtered traces distilled from a stronger model." `build_dataset`
+  threads the same params and skips filtered-out (`None`) records.
+  Separately, `build_rlvr_prompt`/`build_rlvr_prompts` (+ a `prompts` CLI
+  subcommand) produce a **structurally distinct** RLVR-prompt JSONL (no
+  assistant turn at all) from `train.jsonl` `Task`s, so RLVR data cannot be
+  pointed at the SFT trace file by construction (methodology.md's "RLVR
+  data never mixed into SFT").
+- **Bug found and fixed during independent review** (`opencode run`): the
+  first verifier-filter implementation checked exact-match via
+  `habeas_forge.score.score_predictions`'s `caught`/`total`/`fp` — but
+  those are severity-weighted sums over a *set* of (type, severity) pairs,
+  so a task with two violations sharing the same (type, severity) (e.g.
+  two `DOC_EXPIRED`) would pass the "exact match" check even if the
+  teacher's trace reported only one of them. Fixed by comparing
+  `collections.Counter((type, severity) for v in violations)` — a true
+  multiset comparison — directly in `build_record`, independent of
+  `score_predictions`. Confirmed via a live demonstration
+  (`score_predictions` returns `caught==total==1.0, fp==0` for a 2-vs-1
+  duplicate-violation pair) and empirically confirmed **currently
+  unreachable via the generator** (`_valid_packet` never produces more
+  than one expirable List A/B document, and the `REMOTE_EXAM_INVALID`
+  injection branch always sets exactly one of its two sub-conditions bad,
+  never both) — fixed anyway since it's a latent correctness gap that
+  self-play or a generator change could make reachable later, and the fix
+  was cheap and file-local.
+- Rationale: a "verifier-filtered trace" claim needs to actually be exact;
+  set-based aggregate scoring (fine for `score_predictions`'s intended use
+  — recall/precision reporting at the benchmark level) is the wrong tool
+  for a hard pass/fail filter gating what enters the SFT dataset.
+- Evidence: `model/tests/test_dataset_builder.py::
+  test_build_record_teacher_source_duplicate_violation_undercount_filtered`
+  (regression test, hand-constructs a duplicate-violation task) + all other
+  `dataset_builder`/`rlvr_reward`/`train_cli` tests — 17/17 green.
+- Alternatives rejected: changing `score_predictions` itself to multiset
+  semantics — would be a second CONTRACTS.md-scoped scoring change in one
+  session (after the verdict_correct fix) with wider blast radius across
+  every consumer of severity-weighted recall; the exact-match need is
+  local to this one filter, so fixing it there is narrower and safer.
+
 ## 2026-08-17 — P4 Stage 2 — Verdict-consistency scoring fix + RLVR reward()
 - Decision: `score_predictions` (CONTRACTS.md §2's scorer) previously only
   compared violation-instance sets (`caught`/`total`/`fp`) and never

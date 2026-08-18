@@ -20,13 +20,22 @@ import base64
 import json
 import os
 import random
+from collections import Counter
+from typing import Literal, Protocol
 
 import click
 
 from habeas_forge.generate import render_form
 from habeas_forge.schema import Task, Violation
 
-from .schema import SYSTEM_PROMPT
+from .schema import SYSTEM_PROMPT, to_forge_verdict
+
+
+class Provider(Protocol):
+    """Minimal adapter: raw model completion for one task."""
+
+    def complete(self, system: str, user: str, image_b64: str) -> str:
+        ...
 
 
 def _load_tasks(path: str) -> list[Task]:
@@ -83,31 +92,103 @@ def _render_rng(task: Task) -> random.Random:
     return random.Random(int(task.signature[:16], 16))
 
 
-def build_record(task: Task) -> dict:
+def build_record(task: Task, target_source: Literal["oracle", "teacher"] = "oracle",
+                 teacher: Provider | None = None) -> dict | None:
+    """Build one SFT chat-format record.
+
+    target_source="oracle" (default): assistant turn is the ground-truth
+    oracle Verdict — today's behavior, unchanged.
+
+    target_source="teacher": assistant turn is a teacher model's own
+    response, **verifier-filtered** per docs/methodology.md ("SFT
+    cold-start on verifier-filtered traces distilled from a stronger
+    model") — kept only if the teacher's parsed Verdict is a true exact
+    match: same verdict string, and the *multiset* of (type, severity)
+    violations matches the oracle's exactly (not just set-membership —
+    `score_predictions`'s caught/total/fp are severity-weighted sums over
+    a *set* of (type, severity) pairs, so they alone can't detect a
+    teacher trace that drops one instance of a duplicated violation type;
+    see docs/DECISIONS.md). Returns None (caller drops the task) on any
+    mismatch.
+    """
     img = render_form(task.form, ocr_noise_level=task.ocr_noise_level,
                       rng=_render_rng(task))
     image_b64 = base64.b64encode(img).decode("ascii")
+    user_content = _user_content(task, image_b64)
+
+    if target_source == "oracle":
+        target_verdict = task.expected
+    else:
+        if teacher is None:
+            raise ValueError('teacher provider required when target_source="teacher"')
+        raw = teacher.complete(SYSTEM_PROMPT, user_content, image_b64)
+        predicted = to_forge_verdict(raw)
+        if predicted is None or predicted.verdict != task.expected.verdict:
+            return None
+        exp_counts = Counter((v.type, v.severity) for v in task.expected.violations)
+        pred_counts = Counter((v.type, v.severity) for v in predicted.violations)
+        if exp_counts != pred_counts:
+            return None
+        target_verdict = predicted
+
     target = {
-        "verdict": task.expected.verdict,
-        "violations": [_violation_out(v) for v in task.expected.violations],
+        "verdict": target_verdict.verdict,
+        "violations": [_violation_out(v) for v in target_verdict.violations],
     }
     return {
         "task_id": task.task_id,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _user_content(task, image_b64)},
+            {"role": "user", "content": user_content},
             {"role": "assistant", "content": json.dumps(target, separators=(",", ":"))},
         ],
         "image_b64": image_b64,
     }
 
 
-def build_dataset(tasks_path: str, out_path: str) -> int:
+def build_dataset(tasks_path: str, out_path: str,
+                  target_source: Literal["oracle", "teacher"] = "oracle",
+                  teacher: Provider | None = None) -> int:
+    tasks = _load_tasks(tasks_path)
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    n_written = 0
+    with open(out_path, "w") as f:
+        for t in tasks:
+            record = build_record(t, target_source=target_source, teacher=teacher)
+            if record is None:
+                continue  # verifier-filtered out (teacher trace didn't match oracle)
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
+            n_written += 1
+    return n_written
+
+
+def build_rlvr_prompt(task: Task) -> dict:
+    """RLVR prompt record: system+user turns only, no assistant target —
+    that's what GRPO generates. Structurally distinct from build_record()'s
+    SFT record (no gold trace at all), so it cannot leak into SFT training
+    and RLVR prompts can never be pointed at the SFT trace JSONL by
+    accident — satisfies methodology.md's "RLVR data never mixed into SFT."
+    """
+    img = render_form(task.form, ocr_noise_level=task.ocr_noise_level,
+                      rng=_render_rng(task))
+    image_b64 = base64.b64encode(img).decode("ascii")
+    return {
+        "task_id": task.task_id,
+        "prompt": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _user_content(task, image_b64)},
+        ],
+        "images": [image_b64],
+        "expected_verdict": task.expected.model_dump_json(),
+    }
+
+
+def build_rlvr_prompts(tasks_path: str, out_path: str) -> int:
     tasks = _load_tasks(tasks_path)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w") as f:
         for t in tasks:
-            f.write(json.dumps(build_record(t), separators=(",", ":")) + "\n")
+            f.write(json.dumps(build_rlvr_prompt(t), separators=(",", ":")) + "\n")
     return len(tasks)
 
 
@@ -122,6 +203,14 @@ def cli():
 def build(tasks_file: str, out: str) -> None:
     n = build_dataset(tasks_file, out)
     click.echo(f"wrote {n} SFT records to {out}")
+
+
+@cli.command()
+@click.option("--tasks-file", required=True)
+@click.option("--out", required=True)
+def prompts(tasks_file: str, out: str) -> None:
+    n = build_rlvr_prompts(tasks_file, out)
+    click.echo(f"wrote {n} RLVR prompts to {out}")
 
 
 if __name__ == "__main__":
