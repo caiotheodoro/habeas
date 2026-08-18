@@ -149,6 +149,50 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 Stage 0 — SMOKE-LORA GATE CLEARED ✓
+- Decision: after 7 live iterations on GCP (each catching and fixing one
+  real bug — see the entries below, all from this same session/date),
+  `habeas-train-0818-0342` (on-demand L4, us-east1-b, project
+  `project-ddef13eb-b20f-47e0-af0`) completed a full smoke SFT run:
+  `python -m habeas_model.train_cli --data data/sft-train.jsonl --out
+  /root/checkpoints/sft --smoke` — 5/5 training steps, `train_loss: 6.4`
+  (a fresh, untrained LoRA's starting loss — expected, not a target),
+  clean exit, and a real adapter checkpoint written to
+  `/root/checkpoints/sft-final/` (`adapter_model.safetensors`, 499MB,
+  confirmed via `ls -la` on the instance). This is the Stage 0 gate
+  docs/TRAINING_PLAN.md requires before any real SFT run — **cleared**.
+  Bugs found and fixed, in the order hit: (1) `modal.Image.from_dockerfile`
+  path resolution, (2) `load_in_4bit=not smoke` → OOM-on-real-hardware bug
+  (pre-existing since P0), (3) Modal's local client connection instability
+  (pivoted to GCP), (4) `load_in_4bit=True` bare kwarg rejected by
+  installed transformers (needs `quantization_config=BitsAndBytesConfig`),
+  (5) missing `torchvision` (Qwen3VL's video sub-processor), (6)
+  `SFTConfig.max_seq_length` renamed to `max_length`, (7) `gcp_spot.sh`'s
+  bare Ubuntu image had **no NVIDIA driver at all** (silent CPU training),
+  (8) pip transitively upgraded `torchaudio` past the DLVM image's pinned
+  `torch`, an ABI break, (9) `jinja2` too old on the DLVM image, (10) a
+  fixed ~4.74GiB fp32-lm_head-upcast OOM in trl's default loss (fixed via
+  `use_liger_kernel=True`, not a sequence/image-size workaround — see the
+  entry below for the empirical trail on that one specifically).
+- Rationale: this is exactly why the gate exists — every one of these 10
+  bugs would have surfaced mid-way through a real, multi-hour, real-money
+  training run instead, most of them well after real spend had already
+  happened. None were catchable by static review alone (each needed the
+  actual installed package versions + actual GPU hardware to reproduce).
+- Evidence: `/root/checkpoints/sft-final/adapter_model.safetensors`
+  (499106600 bytes) on the live instance; full stdout/journal captured at
+  each of the 7 iterations, referenced across today's DECISIONS.md
+  entries. Instance torn down after confirmation (on-demand billing, no
+  reason to keep it running once the artifact is verified).
+- Next: this specific smoke checkpoint is disposable (`--smoke` uses 8
+  synthetic tasks and 224×224 downscaled images purely to fit an L4) — not
+  meant to be a real starting adapter. `docs/TRAINING_PLAN.md`'s Stage
+  1/2 (real SFT on the full corpus) is now unblocked to actually execute,
+  pending a separate decision on real training's own GPU sizing (the
+  liger-kernel fix + max_length=4096 real-mode headroom hasn't itself been
+  live-tested at full scale — flagging, not assuming it "just works" at
+  10x the data and 4x the sequence length).
+
 ## 2026-08-18 — P4 Stage 0 — L4 VRAM fit: liger-kernel fused loss
 - Decision: after fixing the driver/torchaudio/jinja2 issues, the smoke
   run reached the actual training step and hit

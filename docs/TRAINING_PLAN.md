@@ -1,21 +1,27 @@
 # Habeas — P4 Training Plan (SFT cold-start → RLVR → self-play → judges)
 
-Design-only document — no cloud jobs have been launched from this plan.
 Follows `docs/methodology.md` (shared recipe across specula/suture/plumb/
 habeas) and applies `mlops-pipeline-design` discipline: data/code/model
 versioned independently, promotion gated on a fixed eval set, rollback is a
 pointer flip, not a redeploy.
 
-## 0. Gate status (blocking, shared)
+## 0. Gate status — CLEARED ✓ (2026-08-18)
 
-Smoke LoRA on Modal — validates the 3-day-old Qwen3.8-27B DeltaNet
-fine-tuning tooling before any real spend — is **not yet run** in specula
-(the lead repo) or here. Checked `specula/docs/DECISIONS.md`: no entry.
-**Do not start Stage 2 (real SFT) until either specula records a green
-smoke-LoRA decision, or habeas runs its own smoke LoRA independently** (a
-deliberate scope decision the user deferred earlier this session — revisit
-if specula's timeline is unclear). Stages 1 and the dataset/reward-function
-design work below have no cloud-spend dependency and can proceed now.
+Smoke LoRA — validates the training tooling on real hardware before any
+real spend — **completed successfully** on a GCP on-demand L4
+(`habeas-train-0818-0342`, us-east1-b): 5/5 steps, checkpoint written and
+verified on disk. Took 10 real bugs found and fixed across 7 live
+iterations — full list in `docs/DECISIONS.md`'s "SMOKE-LORA GATE CLEARED"
+entry (2026-08-18). Modal was abandoned for this specific attempt (local
+client connection instability, unrelated to the training code) — habeas
+ran its own independent GCP smoke test rather than waiting on specula.
+
+**Important caveat before starting Stage 2 for real**: the smoke run used
+8 tasks and 224×224 downscaled images specifically to fit an L4's VRAM
+(see the liger-kernel DECISIONS.md entry) — real SFT's `max_length=4096`,
+full-resolution images, and the full ~1600-task corpus have **not**
+themselves been live-verified for GPU-memory fit. Re-verify before
+assuming the smoke pass generalizes.
 
 ## 1. Reproducibility contract (per training run, logged in DECISIONS.md)
 
@@ -166,20 +172,30 @@ each):**
   from the SFT trace file).
 - `cloud/gcp_spot.sh`/`cloud/Dockerfile` dangling-module bugs fixed.
 
+**Done (2026-08-18):**
+- Stage 0 (smoke LoRA gate): cleared — see §0 above and
+  `docs/DECISIONS.md`. 10 real bugs found and fixed in the process
+  (quantization API, torchvision, `max_length` rename, missing GPU driver,
+  torchaudio ABI break, old jinja2, and a fixed-size CUDA OOM fixed via
+  `use_liger_kernel=True`) — every one of `cloud/modal_train.py`,
+  `cloud/modal_rlvr.py`, `cloud/gcp_spot.sh`, `cloud/Dockerfile`, and
+  `model/src/habeas_model/train_cli.py` now reflects those fixes. The
+  multimodal `images` column format (item 3, old list) is now confirmed
+  working — that was one of the bugs fixed and verified live.
+
 **Still open:**
-1. Resolve Stage 0 (smoke LoRA gate) — check specula's status before
-   duplicating spend, or explicitly decide to run habeas's own. **Nothing
-   past this point can actually execute for real** (everything above is
-   built and unit-tested, but untested against a real GPU/model).
+1. Real SFT run at full scale (`max_length=4096`, full-resolution images,
+   full ~1600-task corpus) — **not yet live-verified for GPU memory fit**;
+   the smoke run deliberately downscaled both dimensions to fit an L4. Size
+   the GPU (or tune further) before assuming it fits.
 2. Wire a real `Provider` (local vLLM/MLX or frontier API) into
    `benchmark_eval`/the teacher-distillation path — current tests use
    in-repo mock/test-double providers only (a deliberate scope cut this
    round — the only already-authenticated live-model path in this
    environment, the `opencode` CLI, is too slow/agentic for volume use).
-3. Verify the real multimodal `images` column format against the actual
-   Qwen3.8-27B processor, and confirm TRL 0.24.0's `GRPOTrainer` genuinely
-   supports multimodal inputs end-to-end — both flagged as unverifiable
-   without GPU access, real risks for the first real training run.
+3. `GRPOTrainer` (RLVR) has not itself been live-verified — only the SFT
+   path was smoke-tested. Confirm the same fixes (liger-kernel, driver,
+   dependency versions) carry over cleanly before a real RLVR run.
 
 Items 2–3 are independent of each other and of Stage 0 — a reasonable
 fanout for the next work session once scoped further.

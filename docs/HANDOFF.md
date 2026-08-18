@@ -50,7 +50,25 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
   torch/transformers/trl/peft) and `click`+`numpy` added to
   `model/pyproject.toml`. **Smoke LoRA on Modal not run** — deferred,
   shared gate, specula is the lead repo for that.
-- **P4 not started**: SFT, RLVR, head-to-head.
+- **P4 Stage 0 (smoke-LoRA gate): CLEARED ✓ (2026-08-18)** — a real SFT
+  smoke run completed end-to-end on a GCP on-demand L4
+  (`habeas-train-0818-0342`, us-east1-b, project
+  `project-ddef13eb-b20f-47e0-af0`): 5/5 training steps, checkpoint
+  written (`adapter_model.safetensors`, 499MB, verified on disk), clean
+  exit. Took 10 fixed bugs across 7 live iterations to get there — see
+  `docs/DECISIONS.md`'s "SMOKE-LORA GATE CLEARED" entry for the full list
+  and each bug's own entry for detail. Instance torn down after
+  confirmation (on-demand billing). **Modal was abandoned for this attempt**
+  — its local client proved unreliable for long-lived connections in this
+  session (unrelated to the training code); `cloud/modal_train.py`/
+  `modal_rlvr.py` carry the same code fixes but haven't themselves been
+  live-verified on Modal.
+- **P4 Stages 1-3 (real SFT/RLVR)**: code built and unit-tested (see P3
+  entry above), but **not live-verified at real scale** — the smoke run
+  used 8 synthetic tasks and 224×224 downscaled images specifically to fit
+  an L4; real training's `max_length=4096` / full-resolution images / full
+  ~1600-task corpus GPU-memory footprint has not itself been tested. Do
+  not assume it "just works" by extrapolation from the smoke pass.
 
 ## Next actions
 
@@ -60,10 +78,12 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
    current M-274 PDF directly if a discrepancy surfaces in practice.
 2. **P3 remainder**: wire a real provider (local vLLM/MLX or frontier API)
    behind the `Provider` protocol in `benchmark_eval.py` for actual
-   head-to-head runs (current tests use an in-memory test double); wire
-   `cloud/modal_train.py`'s `train()` to actually consume the `data: bytes`
-   param (currently unused — hardcoded `train_dataset=[]`) once the smoke
-   LoRA gate clears.
+   head-to-head runs (current tests use an in-memory test double).
+3. **P4 real SFT run**: now unblocked (gate cleared) — needs its own GPU-
+   sizing decision (L4 may or may not be sufficient at full `max_length`/
+   resolution even with liger-kernel; verify before assuming) and, per
+   methodology.md, teacher-distilled verifier-filtered traces rather than
+   the smoke run's raw oracle-target data.
 
 ## Bootstrap (fresh agent)
 
