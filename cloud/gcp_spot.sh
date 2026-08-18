@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
-# GCP $300 fallback: L4 training. Defaults to a cheap SMOKE run (Stage 0
-# gate — validates the tooling on real hardware without real spend); set
-# SMOKE=false for a real full training run once the gate is confirmed green.
+# GCP $300 fallback: L4 training. Three modes:
+#   SMOKE=true (default)     — cheap tooling-only validation (Stage 0 gate),
+#                               8 tasks, 224x224 images, max_length=1024.
+#   VALIDATE=true            — real config (max_length=4096, full-res
+#                               images) on a small task count, bounded to a
+#                               few steps — the way to check real-scale
+#                               GPU-memory fit BEFORE committing to a full
+#                               run. The smoke config is deliberately too
+#                               small to answer that question (verified:
+#                               reducing smoke's max_length/image size had
+#                               zero effect on its OOM — the true fix there
+#                               was use_liger_kernel, see docs/DECISIONS.md;
+#                               real-scale headroom is still unverified).
+#   both false                — real full run: full corpus, real epochs.
 # PREEMPTIBLE=false (default) uses an on-demand instance — spot L4 capacity
 # in this project has been unreliable (stockouts across most zones, and one
 # spot instance got preempted mid-boot), so on-demand trades a slightly
-# higher hourly rate for actually completing a short validation run. Set
-# PREEMPTIBLE=true to go back to spot once capacity/reliability allow.
+# higher hourly rate for actually completing a run without a capacity retry
+# loop. Set PREEMPTIBLE=true once capacity/reliability allow.
 set -euo pipefail
 PROJECT=${GCP_PROJECT:-cambio-curitiba-498923}
 ZONE=${GCP_ZONE:-us-central1-a}
 MACHINE=${GCP_MACHINE:-g2-standard-12}
 SMOKE=${SMOKE:-true}
+VALIDATE=${VALIDATE:-false}
 PILOT_N=${PILOT_N:-2000}
+VALIDATE_N=${VALIDATE_N:-50}
+VALIDATE_STEPS=${VALIDATE_STEPS:-5}
 PREEMPTIBLE=${PREEMPTIBLE:-false}
 NAME="habeas-train-$(date +%m%d-%H%M)"
 
@@ -27,6 +41,9 @@ fi
 if [ "$SMOKE" = "true" ]; then
   PILOT_N=20
   TRAIN_CLI_FLAG="--smoke"
+elif [ "$VALIDATE" = "true" ]; then
+  PILOT_N=$VALIDATE_N
+  TRAIN_CLI_FLAG="--max-steps $VALIDATE_STEPS"
 else
   TRAIN_CLI_FLAG=""
 fi
@@ -83,5 +100,5 @@ gcloud compute instances create "$NAME" \
   --boot-disk-size=100GB \
   --metadata-from-file=startup-script="$STARTUP_SCRIPT"
 
-echo "started $NAME (L4, preemptible=$PREEMPTIBLE, SMOKE=$SMOKE) — gcloud compute ssh $NAME --zone=$ZONE"
+echo "started $NAME (L4, preemptible=$PREEMPTIBLE, SMOKE=$SMOKE, VALIDATE=$VALIDATE) — gcloud compute ssh $NAME --zone=$ZONE"
 echo "tail progress:   gcloud compute ssh $NAME --zone=$ZONE --command='tail -f /root/train.log'"
