@@ -36,12 +36,18 @@ trap 'rm -f "$STARTUP_SCRIPT"' EXIT
 cat > "$STARTUP_SCRIPT" <<EOF
 #!/bin/bash
 set -euo pipefail
-apt-get update && apt-get install -y python3-pip
+# The image family below (see instance-create below) is a Google Deep
+# Learning VM: PyTorch + CUDA + the NVIDIA driver are already installed.
+# A bare ubuntu-2204-lts image has NO GPU driver at all — an earlier
+# attempt trained silently on CPU for 20+ min before transformers'
+# TrainingArgs validation caught it ("doesn't support bf16/gpu"); found
+# via an actual smoke run, see docs/DECISIONS.md.
 # flash-attn/unsloth/vllm intentionally omitted: nothing in the current
 # SFT/RLVR code paths imports them (see the cloud/Dockerfile comment).
-# torchvision: Qwen3VL's AutoProcessor requires it even for image-only use
-# (found via an actual smoke run on this project's L4 instance).
-pip3 install torch torchvision transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
+# torch/torchvision intentionally NOT reinstalled here: the DLVM image's
+# preinstalled build is CUDA-linked; a bare \`pip install torch\` can
+# silently replace it with a mismatched or CPU-only wheel.
+pip3 install transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
 cd /root && git clone https://github.com/caiotheodoro/habeas.git && cd habeas
 export PYTHONPATH=/root/habeas/model/src:/root/habeas/forge/src
 # data/ is gitignored: a fresh clone has no pilot/train/val files, so
@@ -59,7 +65,8 @@ gcloud compute instances create "$NAME" \
   --project="$PROJECT" --zone="$ZONE" --machine-type="$MACHINE" \
   --accelerator=type=nvidia-l4,count=1 \
   $PREEMPT_FLAGS \
-  --image-family=ubuntu-2204-lts --image-project=ubuntu-os-cloud \
+  --image-family=pytorch-2-9-cu129-ubuntu-2204-nvidia-580 \
+  --image-project=deeplearning-platform-release \
   --boot-disk-size=100GB \
   --metadata-from-file=startup-script="$STARTUP_SCRIPT"
 

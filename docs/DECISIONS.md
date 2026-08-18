@@ -149,6 +149,42 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 Stage 0 — gcp_spot.sh had no GPU driver at all
+- Decision: after the torchvision/max_length fixes, the smoke run got much
+  further (loading model weights) before failing with `ValueError: Your
+  setup doesn't support bf16/gpu. You need to assign use_cpu if you want
+  to train the model on CPU.` — `nvidia-smi` on the instance: command not
+  found; `torch.cuda.is_available()`: `False`. The bare
+  `--image-family=ubuntu-2204-lts` image `gcp_spot.sh` used has **no
+  NVIDIA driver installed at all** — the L4 accelerator was attached but
+  invisible to every process on the box, so the ~25+ minutes of "model
+  loading" progress observed in two earlier attempts was actually running
+  on CPU the whole time, only caught when `transformers`' `TrainingArgs`
+  validation explicitly checked for GPU/bf16 support. Fixed by switching
+  to Google's Deep Learning VM image family
+  (`pytorch-2-9-cu129-ubuntu-2204-nvidia-580`,
+  project `deeplearning-platform-release`) — PyTorch/CUDA/driver
+  preinstalled and version-matched, the standard approach for GCP GPU
+  workloads rather than manually apt-get installing a driver on a bare
+  image. Also removed `torch`/`torchvision` from the startup script's own
+  `pip install` line, since a bare `pip install torch` on top of the DLVM
+  image risks silently replacing its CUDA-linked build with a mismatched
+  or CPU-only wheel from PyPI's default index.
+- Rationale: this is the highest-value bug the smoke gate has caught so
+  far — a "successful"-looking CPU run would have produced a technically-
+  working but catastrophically slow and pointless LoRA adapter, and this
+  exact silent-CPU-fallback failure mode is called out generically in
+  `mlops-pipeline-design`'s corner-cases checklist ("pipeline ran without
+  error ≠ validated").
+- Evidence: `nvidia-smi`/`torch.cuda.is_available()` checks on the live
+  instance; `gcloud compute images describe-from-family` confirms the new
+  image family exists with a 100GB disk (matches the script's existing
+  `--boot-disk-size=100GB`, no change needed there).
+- Alternatives rejected: manually `apt-get install nvidia-driver-XXX` +
+  reboot on the bare image — slower, more fragile (driver/CUDA/torch
+  version matching is exactly what the DLVM image exists to solve), and
+  reboot-in-startup-script adds its own failure modes.
+
 ## 2026-08-18 — P4 Stage 0 — Smoke-LoRA gate: torchvision + SFTConfig API bugs
 - Decision: fixed two more real bugs found by re-running the smoke test
   after the quantization_config fix, each one progressing further before
