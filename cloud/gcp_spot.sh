@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# GCP $300 fallback: GPU training. Three run modes:
-#   SMOKE=true (default)     — cheap tooling-only validation (Stage 0 gate),
-#                               8 tasks, 224x224 images, max_length=1024.
-#   VALIDATE=true            — real config (max_length=4096, full-res
-#                               images) on a small task count, bounded to a
-#                               few steps — the way to check real-scale
-#                               GPU-memory fit BEFORE committing to a full
-#                               run. The smoke config is deliberately too
-#                               small to answer that question — confirmed
-#                               via a live L4 VALIDATE run (2026-08-18, see
-#                               docs/DECISIONS.md): step 1/5 succeeded at
-#                               21.5/22GB, step 2 OOM'd — an L4 does NOT
-#                               reliably fit the real config even with
-#                               use_liger_kernel=True. That's why GPU_TYPE
-#                               exists below.
-#   both false                — real full run: full corpus, real epochs.
+# GCP $300 fallback: GPU training. MODE is REQUIRED (no silent default —
+# two separate SMOKE/VALIDATE booleans with defaults caused two real,
+# expensive near-misses: a real-run launch attempt silently ran as a
+# smoke run twice because SMOKE's own default won whenever the caller
+# only set VALIDATE, or set neither. See docs/DECISIONS.md). Set
+# MODE=smoke|validate|real:
+#   smoke     — cheap tooling-only validation (Stage 0 gate), 8 tasks,
+#               224x224 images, max_length=1024.
+#   validate  — real config (max_length=4096, full-res images) on a small
+#               task count, bounded to a few steps — the way to check
+#               real-scale GPU-memory fit BEFORE committing to a full run.
+#               The smoke config is deliberately too small to answer that
+#               question — confirmed via a live L4 VALIDATE run
+#               (2026-08-18, see docs/DECISIONS.md): step 1/5 succeeded at
+#               21.5/22GB, step 2 OOM'd — an L4 does NOT reliably fit the
+#               real config even with use_liger_kernel=True. That's why
+#               GPU_TYPE exists below.
+#   real      — full corpus, real epochs, no step bound.
 # GPU_TYPE=nvidia-l4 (default) or nvidia-tesla-a100 — L4 confirmed
 # insufficient for the real config (see above); A100 40GB is the current
 # real-training target.
@@ -42,16 +44,11 @@ if [ "$GPU_TYPE" = "nvidia-tesla-a100" ]; then
 else
   MACHINE=${GCP_MACHINE:-g2-standard-12}
 fi
-VALIDATE=${VALIDATE:-false}
-# SMOKE defaults to true UNLESS VALIDATE=true was explicitly requested —
-# without this, SMOKE's default silently wins the if/elif below and a
-# caller who only set VALIDATE=true gets a smoke run instead (this
-# actually happened once — see docs/DECISIONS.md).
-if [ "$VALIDATE" = "true" ]; then
-  SMOKE=${SMOKE:-false}
-else
-  SMOKE=${SMOKE:-true}
-fi
+MODE=${MODE:?"Set MODE=smoke|validate|real (no default — see header comment)"}
+case "$MODE" in
+  smoke|validate|real) ;;
+  *) echo "MODE must be smoke, validate, or real (got: $MODE)" >&2; exit 1 ;;
+esac
 PILOT_N=${PILOT_N:-2000}
 VALIDATE_N=${VALIDATE_N:-50}
 VALIDATE_STEPS=${VALIDATE_STEPS:-5}
@@ -72,15 +69,19 @@ else
   PREEMPT_FLAGS="--maintenance-policy=TERMINATE"
 fi
 
-if [ "$SMOKE" = "true" ]; then
-  PILOT_N=20
-  TRAIN_CLI_FLAG="--smoke"
-elif [ "$VALIDATE" = "true" ]; then
-  PILOT_N=$VALIDATE_N
-  TRAIN_CLI_FLAG="--max-steps $VALIDATE_STEPS"
-else
-  TRAIN_CLI_FLAG=""
-fi
+case "$MODE" in
+  smoke)
+    PILOT_N=20
+    TRAIN_CLI_FLAG="--smoke"
+    ;;
+  validate)
+    PILOT_N=$VALIDATE_N
+    TRAIN_CLI_FLAG="--max-steps $VALIDATE_STEPS"
+    ;;
+  real)
+    TRAIN_CLI_FLAG=""
+    ;;
+esac
 
 STARTUP_SCRIPT="$(mktemp)"
 trap 'rm -f "$STARTUP_SCRIPT"' EXIT
@@ -150,5 +151,5 @@ gcloud compute instances create "$NAME" \
   --boot-disk-size=$BOOT_DISK_SIZE \
   --metadata-from-file=startup-script="$STARTUP_SCRIPT"
 
-echo "started $NAME ($GPU_TYPE, preemptible=$PREEMPTIBLE, SMOKE=$SMOKE, VALIDATE=$VALIDATE) — gcloud compute ssh $NAME --zone=$ZONE"
+echo "started $NAME ($GPU_TYPE, preemptible=$PREEMPTIBLE, MODE=$MODE) — gcloud compute ssh $NAME --zone=$ZONE"
 echo "tail progress:   gcloud compute ssh $NAME --zone=$ZONE --command='tail -f /root/train.log'"

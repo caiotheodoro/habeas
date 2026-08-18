@@ -149,6 +149,34 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — gcp_spot.sh MODE replaces SMOKE/VALIDATE (bit twice)
+- Decision: replaced the `SMOKE`/`VALIDATE` boolean pair with a single
+  required `MODE=smoke|validate|real` (`${MODE:?...}` — hard failure with
+  a clear message if unset, `case` statement rejects anything else).
+- Rationale: the two-boolean design's "SMOKE defaults to true unless
+  VALIDATE=true" footgun (logged earlier this same date) was fixed once,
+  then bit again in a different shape: launching a *real* run (both
+  `SMOKE` and `VALIDATE` meant to be false) without explicitly setting
+  `SMOKE=false` silently ran a smoke run instead, because `SMOKE`'s
+  default won whenever it wasn't explicitly overridden — the exact same
+  underlying defaulting problem, just triggered by omission rather than
+  by setting `VALIDATE=true` alone. Two near-misses on the same class of
+  bug is a design-not-usage problem: no combination of documentation or
+  "remember to set X" discipline reliably prevents a silent wrong-mode
+  launch when the interface allows an "obviously wrong" state (both
+  unset, defaulting to the cheapest/safest mode) to look identical to
+  "I meant this." A single required enum can't have this failure mode —
+  you either name a real mode or the script refuses to run.
+- Evidence: `MODE` unset → `line N: MODE: Set MODE=smoke|validate|real...`
+  (bash's `${VAR:?msg}` parameter expansion, hard exit); `MODE=bogus` →
+  explicit rejection message; `MODE=smoke` → parses and runs as before.
+  Caught before any GPU time was spent on the wrong config both times
+  (deleted the wrongly-configured instance within ~1 min each time).
+- Alternatives rejected: adding a third "did you mean it" guard
+  (confirmation prompt, `--force` flag) — doesn't fix the root cause
+  (silent default winning), just adds friction; the required-enum fix is
+  strictly better and no more code.
+
 ## 2026-08-18 — P4 — Checkpoint-resume before the real full run
 - Decision: before launching a real full SFT run, added
   resume-from-checkpoint support: `train_cli.run_sft` now sets
