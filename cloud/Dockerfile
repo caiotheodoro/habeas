@@ -12,8 +12,12 @@ WORKDIR /workspace
 # from source alone can take 20-40+ min with no functional benefit to the
 # current SFT/RLVR code paths — add them back in a follow-up image once
 # something actually imports them, not preemptively.
+# torchvision: Qwen3VL's AutoProcessor pulls in a video-capable sub-
+# processor that hard-requires it even for image-only use (found via an
+# actual smoke run — ImportError otherwise; a sibling repo hit the same
+# gap independently).
 RUN pip install --no-cache-dir \
-    "torch>=2.6" "transformers>=4.55" "peft>=0.13" "trl>=0.16" \
+    "torch>=2.6" "torchvision" "transformers>=4.55" "peft>=0.13" "trl>=0.16" \
     "accelerate>=1.0" "datasets>=3.0" "pillow>=11" "huggingface_hub>=0.26" \
     "bitsandbytes>=0.44" "click>=8.1" "pydantic>=2.7" "numpy>=1.26"
 

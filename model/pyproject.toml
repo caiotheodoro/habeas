@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",
     "torch>=2.3",
+    "torchvision",
     "transformers>=4.55",
     "peft>=0.13",
     "trl>=0.16",

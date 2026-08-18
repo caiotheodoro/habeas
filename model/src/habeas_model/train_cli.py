@@ -70,7 +70,9 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2) 
     trainer = SFTTrainer(
         model=model, processing_class=processor,
         args=SFTConfig(
-            output_dir=out_dir, max_seq_length=4096,
+            # max_seq_length was renamed to max_length in the installed trl
+            # (found via an actual smoke run — TypeError otherwise).
+            output_dir=out_dir, max_length=4096,
             per_device_train_batch_size=1, gradient_accumulation_steps=4,
             gradient_checkpointing=True, bf16=True, logging_steps=10,
             num_train_epochs=1 if smoke else epochs,

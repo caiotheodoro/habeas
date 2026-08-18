@@ -39,7 +39,9 @@ set -euo pipefail
 apt-get update && apt-get install -y python3-pip
 # flash-attn/unsloth/vllm intentionally omitted: nothing in the current
 # SFT/RLVR code paths imports them (see the cloud/Dockerfile comment).
-pip3 install torch transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
+# torchvision: Qwen3VL's AutoProcessor requires it even for image-only use
+# (found via an actual smoke run on this project's L4 instance).
+pip3 install torch torchvision transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
 cd /root && git clone https://github.com/caiotheodoro/habeas.git && cd habeas
 export PYTHONPATH=/root/habeas/model/src:/root/habeas/forge/src
 # data/ is gitignored: a fresh clone has no pilot/train/val files, so

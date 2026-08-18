@@ -149,6 +149,31 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 Stage 0 — Smoke-LoRA gate: torchvision + SFTConfig API bugs
+- Decision: fixed two more real bugs found by re-running the smoke test
+  after the quantization_config fix, each one progressing further before
+  failing on the next: (1) `AutoProcessor.from_pretrained("Qwen/
+  Qwen3.8-27B")` raises `ImportError: Qwen3VLVideoProcessor requires the
+  Torchvision library` — the multimodal processor pulls in a video
+  sub-processor unconditionally even for image-only use; added
+  `torchvision` to `cloud/Dockerfile`, `cloud/gcp_spot.sh`, and
+  `model/pyproject.toml` (a sibling repo, specula, hit the identical gap
+  independently — cross-repo corroboration this isn't environment-specific
+  noise). (2) `SFTConfig(max_seq_length=4096)` raises `TypeError:
+  unexpected keyword argument 'max_seq_length'` — renamed to `max_length`
+  in the installed trl (confirmed via `inspect.signature` against the
+  actual installed package); fixed in `train_cli.py`.
+- Rationale: same as the quantization_config entry above — these are
+  exactly the class of bug the smoke gate exists to surface before a real,
+  costly training run hits them instead.
+- Evidence: both found via the same live GCP smoke run
+  (`habeas-train-0818-0236`, us-east1-b), redeployed via `git pull` + a
+  `systemd-run` transient unit on the running instance (faster than
+  recreating — reuses the already-downloaded pip packages and partial HF
+  model cache) rather than tearing down/recreating each time. `model`
+  tests still 17/17 green (neither change is exercised by local unit tests
+  — both are live-execution-only paths).
+
 ## 2026-08-18 — P4 Stage 0 — Smoke-LoRA gate: quantization API bug found + fixed
 - Decision: fixed `train_cli.run_sft` and `modal_rlvr.rlvr`'s model loading
   — both passed a bare `load_in_4bit=True` kwarg to
