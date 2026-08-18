@@ -47,7 +47,10 @@ set -euo pipefail
 # torch/torchvision intentionally NOT reinstalled here: the DLVM image's
 # preinstalled build is CUDA-linked; a bare \`pip install torch\` can
 # silently replace it with a mismatched or CPU-only wheel.
-pip3 install transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
+# jinja2>=3.1.0 required by transformers' apply_chat_template; the DLVM
+# image ships 3.0.3 (found via an actual smoke run — ImportError
+# otherwise, see docs/DECISIONS.md).
+pip3 install "jinja2>=3.1.0" transformers peft trl accelerate datasets bitsandbytes click pydantic pillow numpy
 # One of the above transitively pulled torchaudio 2.11.0 while the image's
 # torch stayed at 2.9.1 — an ABI break (peft -> transformers -> ... ->
 # torchaudio's compiled extension: "undefined symbol"). We don't use audio
