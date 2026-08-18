@@ -59,6 +59,15 @@ PREEMPTIBLE=${PREEMPTIBLE:-false}
 # throttling warnings seen during the same run). Never hardcode a token
 # in this script; pass it via the environment at launch time only.
 HF_TOKEN=${HF_TOKEN:-}
+# BATCH_SIZE (default 1): per_device_train_batch_size — 1 was validated
+# against the tighter-memory L4 and never revisited on the A100 (40GB),
+# where it left ~17GB idle and only 36% GPU utilization (found by
+# watching a real run's first 2 steps live). Bump this on an A100 to
+# actually use the headroom; GRAD_ACCUM stays fixed by default so a
+# higher batch also raises the effective batch size (fewer total steps
+# for the same epoch coverage), not just per-step throughput.
+BATCH_SIZE=${BATCH_SIZE:-1}
+GRAD_ACCUM=${GRAD_ACCUM:-4}
 NAME="habeas-train-$(date +%m%d-%H%M)"
 
 # GPU-attached VMs never support live migration, so --maintenance-policy
@@ -82,6 +91,7 @@ case "$MODE" in
     TRAIN_CLI_FLAG=""
     ;;
 esac
+TRAIN_CLI_FLAG="$TRAIN_CLI_FLAG --batch-size $BATCH_SIZE --grad-accum $GRAD_ACCUM"
 
 STARTUP_SCRIPT="$(mktemp)"
 trap 'rm -f "$STARTUP_SCRIPT"' EXIT

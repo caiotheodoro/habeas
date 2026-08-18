@@ -52,7 +52,8 @@ def _load_sft_records(data_path: str, smoke: bool) -> list[dict]:
 
 
 def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
-           max_steps: int | None = None, save_steps: int = 20) -> None:
+           max_steps: int | None = None, save_steps: int = 20,
+           batch_size: int = 1, grad_accum: int = 4) -> None:
     """Train a QLoRA adapter on Qwen3.8-27B from an SFT-record JSONL.
 
     `smoke=True` caps both the data slice (first 8 records) and image size
@@ -117,7 +118,17 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
             # sequence/image-size workaround.
             output_dir=out_dir, max_length=1024 if smoke else 4096,
             use_liger_kernel=True,
-            per_device_train_batch_size=1, gradient_accumulation_steps=4,
+            # per_device_train_batch_size=1 was the original conservative
+            # default, validated against the tighter-memory L4 (22GB) —
+            # never revisited after moving to the A100 (40GB). At batch=1
+            # a real run sat at ~24GB/40GB used and only 36% GPU
+            # utilization (idle time from 4 sequential single-sample
+            # passes per step, not compute) — found by watching the first
+            # 2 real steps live. Bumping batch_size (keeping grad_accum
+            # fixed) both uses the idle headroom AND roughly halves total
+            # step count for the same epoch coverage (more samples/step).
+            per_device_train_batch_size=batch_size,
+            gradient_accumulation_steps=grad_accum,
             gradient_checkpointing=True, bf16=True, logging_steps=10,
             num_train_epochs=1 if smoke else epochs,
             max_steps=max_steps if max_steps is not None else (5 if smoke else -1),
@@ -144,10 +155,12 @@ def run_sft(data_path: str, out_dir: str, smoke: bool = False, epochs: int = 2,
              help="Checkpoint interval — also the resume granularity if "
                   "the run is interrupted and restarted against the same "
                   "--out dir.")
+@click.option("--batch-size", default=1, help="per_device_train_batch_size.")
+@click.option("--grad-accum", default=4, help="gradient_accumulation_steps.")
 def main(data_path: str, out_dir: str, smoke: bool, epochs: int, max_steps: int | None,
-         save_steps: int) -> None:
+         save_steps: int, batch_size: int, grad_accum: int) -> None:
     run_sft(data_path, out_dir, smoke=smoke, epochs=epochs, max_steps=max_steps,
-           save_steps=save_steps)
+           save_steps=save_steps, batch_size=batch_size, grad_accum=grad_accum)
     click.echo(f"wrote checkpoint to {out_dir}-final")
 
 

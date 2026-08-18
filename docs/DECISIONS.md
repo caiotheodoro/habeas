@@ -149,6 +149,33 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — real full run: batch_size=1 wasted A100 headroom
+- Decision: watching the real full run's first 2 steps live (GPU memory
+  ~23.8GB/40GB, GPU utilization 36%), noticed `per_device_train_batch_size=1`
+  — a default set while validating against the tighter-memory L4 (22GB) —
+  was never revisited after moving to the A100 (40GB): ~17GB (41%) sat
+  idle, and the low utilization meant the GPU was spending most of its
+  time waiting on 4 sequential single-sample passes per step rather than
+  computing. Added `batch_size`/`grad_accum` params to `run_sft` (CLI:
+  `--batch-size`/`--grad-accum`), exposed via `gcp_spot.sh`'s
+  `BATCH_SIZE`/`GRAD_ACCUM` env vars (defaults 1/4, unchanged behavior
+  unless overridden). Relaunched the real run with `BATCH_SIZE=2` (keeping
+  `GRAD_ACCUM=4`, so effective batch doubles from 4 to 8) — both uses the
+  idle headroom directly and roughly halves total optimizer steps for the
+  same epoch coverage (more samples processed per step). Estimated
+  ~31hr → ~12-15hr.
+- Rationale: found by literally watching the run rather than blindly
+  trusting the VALIDATE-run-derived defaults carried over unchanged to a
+  GPU with nearly double the memory — the same "measure the actual
+  hardware, don't extrapolate" discipline that drove the L4→A100 decision
+  in the first place, just applied one level deeper.
+- Evidence: `nvidia-smi` telemetry from the live run (23.8GB/40GB, 36%
+  util) before the change; `model` tests 17/17 green after adding the new
+  params. Restarted after only 2 steps (~5 min) — negligible progress
+  lost. `--batch-size 3` was considered but not used this round (untested,
+  real risk of OOM on a run not being closely babysat) — `--batch-size 2`
+  is a confident, well-estimated step from the observed 23.8GB baseline.
+
 ## 2026-08-18 — P4 — gcp_spot.sh MODE replaces SMOKE/VALIDATE (bit twice)
 - Decision: replaced the `SMOKE`/`VALIDATE` boolean pair with a single
   required `MODE=smoke|validate|real` (`${MODE:?...}` — hard failure with
