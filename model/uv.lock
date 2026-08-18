@@ -739,6 +739,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
+    { name = "bitsandbytes" },
     { name = "click" },
     { name = "datasets" },
     { name = "huggingface-hub" },
@@ -761,6 +762,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.0" },
+    { name = "bitsandbytes", specifier = ">=0.44" },
     { name = "click", specifier = ">=8.1" },
     { name = "datasets", specifier = ">=3.0" },
     { name = "huggingface-hub", specifier = ">=0.26" },
