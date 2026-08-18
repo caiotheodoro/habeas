@@ -56,6 +56,12 @@ PILOT_N=${PILOT_N:-2000}
 VALIDATE_N=${VALIDATE_N:-50}
 VALIDATE_STEPS=${VALIDATE_STEPS:-5}
 PREEMPTIBLE=${PREEMPTIBLE:-false}
+# HF_TOKEN (optional): raises HF Hub rate limits for the model download —
+# not the fix for the disk-space issue above, but a real, cheap
+# improvement in its own right (avoids the "unauthenticated requests"
+# throttling warnings seen during the same run). Never hardcode a token
+# in this script; pass it via the environment at launch time only.
+HF_TOKEN=${HF_TOKEN:-}
 NAME="habeas-train-$(date +%m%d-%H%M)"
 
 # GPU-attached VMs never support live migration, so --maintenance-policy
@@ -108,6 +114,7 @@ pip3 install "jinja2>=3.1.0" transformers peft trl accelerate datasets bitsandby
 pip3 uninstall -y torchaudio || true
 cd /root && git clone https://github.com/caiotheodoro/habeas.git && cd habeas
 export PYTHONPATH=/root/habeas/model/src:/root/habeas/forge/src
+$([ -n "$HF_TOKEN" ] && echo "export HF_TOKEN=$HF_TOKEN")
 # data/ is gitignored: a fresh clone has no pilot/train/val files, so
 # regenerate deterministically (seed 7, matches docs/DECISIONS.md P4 Stage
 # 1) instead of assuming a prebuilt data artifact exists on the box.
