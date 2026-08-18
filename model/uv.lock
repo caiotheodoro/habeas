@@ -749,6 +749,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "torch" },
+    { name = "torchvision" },
     { name = "transformers" },
     { name = "trl" },
 ]
@@ -772,6 +773,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "torch", specifier = ">=2.3" },
+    { name = "torchvision" },
     { name = "transformers", specifier = ">=4.55" },
     { name = "trl", specifier = ">=0.16" },
     { name = "unsloth", marker = "extra == 'dev'", specifier = ">=2025.11" },
