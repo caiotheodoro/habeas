@@ -149,6 +149,36 @@ only with measured evidence.
   every consumer of severity-weighted recall; the exact-match need is
   local to this one filter, so fixing it there is narrower and safer.
 
+## 2026-08-18 — P4 — VALIDATE run: real config does NOT reliably fit an L4
+- Decision: ran `VALIDATE=true` (50 tasks, real `max_length=4096`,
+  full-resolution images, `--max-steps 5`) on a fresh on-demand L4
+  (`habeas-train-0818-1006`, us-central1-a). Step 1/5 completed
+  successfully (21.5GB VRAM used, 151s), but step 2 crashed:
+  `torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 340.00
+  MiB. GPU 0 has a total capacity of 22.03 GiB` — a *small* allocation
+  request, meaning the run was sitting right at the ceiling with
+  essentially zero headroom, and the very next micro-batch (different
+  tasks → different real token counts within the 4096 cap) tipped it over.
+  **Conclusion: an L4 does not reliably fit the real training config, even
+  with `use_liger_kernel=True`.** This is exactly the finding the
+  `VALIDATE` mode exists to surface cheaply (~15 min, one small instance)
+  instead of discovering it hours into a full real run.
+- Rationale: confirms the caveat already flagged in `docs/TRAINING_PLAN.md`
+  and `HANDOFF.md` — the smoke pass (224×224 images, max_length=1024)
+  validated the *tooling*, not real-scale GPU-memory fit, and the two are
+  genuinely different questions with different answers here.
+- Evidence: live `nvidia-smi`/journal output from the run; instance torn
+  down immediately after the OOM was confirmed (no reason to keep paying
+  for a dead process).
+- **Decision needed from the user, not made unilaterally here**: real
+  training needs either (a) a bigger GPU (A100 40GB+ — another manual GCP
+  quota-increase round-trip, higher $/hr), or (b) a reduced real config
+  that reliably fits an L4 (e.g. `max_length=2048` instead of 4096, and/or
+  moderate image downscale — not smoke's 224×224, but something like
+  448×448 — trading some context/fidelity for reliability on cheaper
+  hardware). Both are legitimate; this is a cost/quality tradeoff call for
+  the user, not an engineering-only decision.
+
 ## 2026-08-18 — P4 — gcp_spot.sh VALIDATE mode + a SMOKE/VALIDATE footgun
 - Decision: added a `VALIDATE=true` mode to `gcp_spot.sh` — real config
   (`max_length=4096`, full-resolution images) on a small task count

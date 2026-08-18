@@ -185,9 +185,15 @@ each):**
 
 **Still open:**
 1. Real SFT run at full scale (`max_length=4096`, full-resolution images,
-   full ~1600-task corpus) — **not yet live-verified for GPU memory fit**;
-   the smoke run deliberately downscaled both dimensions to fit an L4. Size
-   the GPU (or tune further) before assuming it fits.
+   full ~1600-task corpus) — **confirmed via a `VALIDATE=true` run
+   (2026-08-18, see docs/DECISIONS.md) that this does NOT reliably fit an
+   L4**, even with `use_liger_kernel=True`: step 1/5 succeeded (21.5GB/22GB
+   used), step 2 OOM'd on a 340MB allocation — essentially zero headroom.
+   Needs a user decision before proceeding: (a) bigger GPU (A100 40GB+,
+   another manual quota-increase round-trip), or (b) a reduced real config
+   (e.g. `max_length=2048`, moderate image downscale) that reliably fits
+   an L4. `gcp_spot.sh`'s `VALIDATE=true` mode exists to cheaply re-check
+   whichever option is chosen before committing to the full run.
 2. Wire a real `Provider` (local vLLM/MLX or frontier API) into
    `benchmark_eval`/the teacher-distillation path — current tests use
    in-repo mock/test-double providers only (a deliberate scope cut this
