@@ -27,10 +27,14 @@ multimodal Qwen on cloud free credits.
 2. **RLVR**: GRPO with GSPO sequence-level importance sampling
    (`importance_sampling_level="sequence"` — the algorithm Qwen3 itself
    trains with, natively supported in TRL; fixes GRPO's noisy
-   single-sample-per-token importance ratio), DAPO loss (`loss_type=
-   "dapo"`, TRL's own current default — outperforms the Dr. GRPO loss in
-   practice per 2026 survey evidence) with DAPO's actual paper clip values
-   (`epsilon=0.2, epsilon_high=0.28`, not 1.0), dynamic sampling of
+   single-sample-per-token importance ratio), paired with
+   `loss_type="grpo"` (sequence-length-normalized) **not** `"dapo"` — TRL
+   warns at runtime that "dapo"'s per-token summing doesn't reproduce a
+   true per-sequence objective when combined with sequence-level
+   importance sampling, and says explicitly to use `loss_type="grpo"` to
+   reproduce GSPO's actual paper setup (found live on the first RLVR
+   smoke run, see docs/DECISIONS.md) — with DAPO's actual paper clip
+   values (`epsilon=0.2, epsilon_high=0.28`, not 1.0), dynamic sampling of
    non-saturated prompts, G≈8–16, outcome-verifier-as-oracle only (no PRM —
    narrow, machine-verifiable output; safest against reward hacking).
    **Verifier hardening** before any GPU spend: fuzz the reward function

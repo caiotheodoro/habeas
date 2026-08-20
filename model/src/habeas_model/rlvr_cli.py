@@ -83,14 +83,19 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
         args=GRPOConfig(
             output_dir=out_dir,
             # GSPO (sequence-level importance sampling, the algorithm
-            # Qwen3 itself trains with) + DAPO loss (TRL's own current
-            # default, outperforms the Dr. GRPO loss in practice) + DAPO's
-            # actual paper clip values. See cloud/modal_rlvr.py's module
-            # docstring and docs/DECISIONS.md for the correction history
-            # (epsilon_high was wrongly 1.0, loss_type was wrongly
-            # "dr_grpo" in an earlier design pass never live-verified).
+            # Qwen3 itself trains with) + DAPO's clip values. loss_type is
+            # "grpo" (sequence-length-normalized), NOT "dapo" — TRL itself
+            # warns at runtime that pairing importance_sampling_level=
+            # "sequence" with loss_type="dapo" sums per-token contributions
+            # in a way that doesn't reproduce a true per-sequence objective,
+            # and says explicitly: "to reproduce the GSPO paper's setup,
+            # set loss_type='grpo'". Found live on the first RLVR smoke run
+            # (see docs/DECISIONS.md) — "dapo" was this file's first guess
+            # based on it being TRL's plain default, corrected once GSPO's
+            # own pairing requirement became clear from the library's own
+            # warning, not from a second literature pass.
             importance_sampling_level="sequence",
-            loss_type="dapo",
+            loss_type="grpo",
             epsilon=0.2, epsilon_high=0.28,
             num_generations=group_size,
             max_steps=max_steps if max_steps is not None else (5 if smoke else iters),

@@ -818,3 +818,45 @@ only with measured evidence.
   eval prompts per forward pass is a real speedup opportunity not
   implemented here, flagged for a future eval-throughput pass rather
   than blocking RLVR on it).
+
+## 2026-08-20 — P4 — RLVR research pass + 2 live bugs on first smoke run
+- Before any RLVR GPU spend, researched 2026 SOTA (user request: "reach
+  the biggest we can" before more GPU work) and corrected `modal_rlvr.py`'s
+  original never-live-verified design: `epsilon_high=1.0` was wrong (DAPO
+  paper value is 0.28, confirmed against installed `trl/grpo_config.py`);
+  adopted GSPO (`importance_sampling_level="sequence"`, the algorithm
+  Qwen3 itself trains with — arXiv:2507.18071) over plain GRPO's noisy
+  token-level importance ratio. Also researched LLM-as-a-Verifier
+  (arXiv:2607.05391, user-supplied) — not applicable to the RLVR reward
+  itself (we have a deterministic oracle, strictly safer against reward
+  hacking than any LLM-verifier), but a real future upgrade path for
+  Stage 4 self-play (best-of-N candidate selection) and Stage 5 judges
+  (continuous logprob scoring) — noted in methodology.md, not built yet.
+  Added `model/src/habeas_model/rlvr_cli.py` (GCP-path entrypoint, same
+  Modal/GCP split `run_sft` already went through) and `cloud/gcp_rlvr.sh`
+  (`MODE=smoke|validate|real`, same enum discipline as `gcp_spot.sh`).
+  Added 6 verifier-hardening unit tests (fuzzing `reward()` against
+  degenerate completions) per the research's "fuzz the verifier before
+  training" recommendation.
+- **First live RLVR smoke run** (`habeas-rlvr-0820-0244`, A100 preemptible)
+  found 2 real bugs neither the literature review nor the code-only round
+  caught:
+  1. TRL warns at runtime that pairing `importance_sampling_level=
+     "sequence"` with `loss_type="dapo"` (TRL's plain default, and this
+     file's first guess) sums per-token contributions in a way that
+     doesn't reproduce a true per-sequence objective — the library's own
+     warning says explicitly to use `loss_type="grpo"` to reproduce
+     GSPO's actual paper setup. Fixed: `loss_type="grpo"`.
+  2. `oracle_reward_func` assumed `completions: list[str]`, but
+     GRPOTrainer wraps each completion as `[{"role": "assistant",
+     "content": text}]` whenever the dataset is conversational (ours is —
+     `build_rlvr_prompt`'s `"prompt"` column is a list of role/content
+     dicts). Crashed with `TypeError: expected string or bytes-like
+     object` inside `to_forge_verdict` on the very first reward
+     computation. Fixed: unwrap `completion[0]["content"]` when
+     `completion` is a list, matching `grpo_trainer.py`'s own
+     `is_conversational(inputs[0])` branch.
+  Both fixed, tested (new `test_oracle_reward_func_conversational_
+  completion_shape`), and pushed before the smoke run was re-attempted —
+  same live-iterate-on-real-hardware discipline as every other bug this
+  session.

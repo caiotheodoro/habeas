@@ -1,6 +1,6 @@
-"""Modal RLVR app: GRPO (Dr. GRPO + DAPO decoupled clip) against the forge
-oracle reward. SFT adapter -> RL-tuned adapter. See docs/TRAINING_PLAN.md
-§Stage 3.
+"""Modal RLVR app: GSPO (sequence-level importance sampling) + DAPO
+decoupled clip against the forge oracle reward. SFT adapter -> RL-tuned
+adapter. See docs/TRAINING_PLAN.md §Stage 3.
 
 Run: modal run cloud/modal_rlvr.py --prompts data/rlvr-prompts.jsonl \
        --base-adapter /checkpoints/sft-final --smoke
@@ -14,20 +14,25 @@ never mixed into SFT").
 TRL API notes (re-verified 2026-08-20 against the installed model/.venv
 trl source directly, correcting two wrong values from the original
 design pass — see docs/DECISIONS.md's RLVR-research entry):
-- `GRPOConfig.loss_type="dapo"` is TRL's own current **default** (not
-  `"dr_grpo"` — one 2026 survey found the Dr. GRPO loss underperforming
-  plain DAPO in practice, matching TRL's own choice). Normalizes by
-  active-token count in the global accumulated batch; eliminates the same
-  length bias Dr. GRPO targets without Dr. GRPO's caveats.
-- `GRPOConfig(epsilon=0.2, epsilon_high=0.28)` is DAPO's actual paper
-  clip value — the earlier `epsilon_high=1.0` here was simply wrong,
-  confirmed against the installed `grpo_config.py` docstring ("Paper DAPO
-  recommends 0.28").
 - `GRPOConfig(importance_sampling_level="sequence")` — GSPO (sequence-
   level importance sampling instead of GRPO's noisy token-level ratio).
   This is the algorithm Qwen3 itself trains with, natively supported in
   TRL, and directly relevant since our base model *is* Qwen3.8-27B
   (arXiv:2507.18071).
+- `GRPOConfig.loss_type="grpo"` (sequence-length-normalized), **not**
+  `"dapo"` despite `"dapo"` being TRL's plain default — TRL itself warns
+  at runtime that pairing `importance_sampling_level="sequence"` with
+  `loss_type="dapo"` sums per-token contributions in a way that doesn't
+  reproduce a true per-sequence objective, and says explicitly to set
+  `loss_type="grpo"` to reproduce GSPO's actual paper setup. Found live
+  on the first RLVR smoke run (`habeas-rlvr-0820-0244`, see
+  docs/DECISIONS.md) — `"dapo"` was this file's first guess based on it
+  being TRL's plain default; corrected once GSPO's own pairing
+  requirement became clear from the library's own warning.
+- `GRPOConfig(epsilon=0.2, epsilon_high=0.28)` is DAPO's actual paper
+  clip value — the earlier `epsilon_high=1.0` here was simply wrong,
+  confirmed against the installed `grpo_config.py` docstring ("Paper DAPO
+  recommends 0.28").
 - Dynamic sampling of non-saturated prompt groups (DAPO's "drop/resample
   zero-reward-variance groups") is **not** natively supported — GRPOTrainer
   only logs `frac_reward_zero_std`, it doesn't filter. Deliberately shipped

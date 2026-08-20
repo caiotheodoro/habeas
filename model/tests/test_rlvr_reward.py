@@ -143,3 +143,27 @@ def test_oracle_reward_func_batch_aligned():
     rewards = oracle_reward_func(completions, expected_verdict)
     assert len(rewards) == 3
     assert all(r > 1.0 for r in rewards)
+
+
+def test_oracle_reward_func_conversational_completion_shape():
+    # GRPOTrainer wraps completions as [{"role": "assistant", "content":
+    # text}] (not a plain string) whenever the dataset is conversational
+    # (has a "prompt" column of role/content dicts, which build_rlvr_prompt
+    # produces) — found live on the first RLVR smoke run
+    # (habeas-rlvr-0820-0244, TypeError inside to_forge_verdict). Must be
+    # handled identically to the plain-string shape.
+    rng = random.Random(29)
+    task = generate.task(rng, seed=29, n_violations=1)
+    v = task.expected.violations[0]
+    raw = json.dumps({
+        "verdict": task.expected.verdict,
+        "violations": [{"type": v.type.value, "severity": v.severity.value,
+                        "field": v.field, "observed": v.observed,
+                        "expected": v.expected, "cfr": v.cfr,
+                        "correction": v.correction}],
+    })
+    conversational = [[{"role": "assistant", "content": raw}]]
+    plain = [raw]
+    expected_verdict = [task.expected.model_dump_json()]
+    assert (oracle_reward_func(conversational, expected_verdict)
+            == oracle_reward_func(plain, expected_verdict))
