@@ -42,7 +42,7 @@ def _load_rlvr_records(prompts_path: str, smoke: bool) -> list[dict]:
 
 def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
              smoke: bool = False, iters: int = 200, group_size: int = 8,
-             max_steps: int | None = None) -> None:
+             max_steps: int | None = None, use_liger_kernel: bool = True) -> None:
     """Train an RL-tuned adapter on top of an SFT adapter via GRPO/GSPO
     against the forge oracle reward.
 
@@ -101,8 +101,16 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
             max_steps=max_steps if max_steps is not None else (5 if smoke else iters),
             # Same fixed fp32-lm_head-upcast OOM as SFT (see train_cli.py's
             # comment / docs/DECISIONS.md) applies here too — GRPOConfig
-            # exposes the same fused-loss escape hatch.
-            use_liger_kernel=True,
+            # exposes the same fused-loss escape hatch. Toggleable: a live
+            # RLVR smoke run crashed inside compute_liger_loss's vision
+            # forward pass ("Image features and image tokens do not match")
+            # — SFTTrainer used the same liger+images combo successfully,
+            # so this looks specific to how GRPOTrainer's liger-loss path
+            # batches pixel_values across num_generations copies of one
+            # source image, not a general liger+VLM incompatibility. Kept
+            # as a caller-controlled flag rather than hardcoding a verdict
+            # either way pending confirmation on real hardware.
+            use_liger_kernel=use_liger_kernel,
         ),
         train_dataset=ds,
     )
@@ -120,10 +128,14 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
 @click.option("--max-steps", default=None, type=int,
              help="Bound a run to N steps regardless of --smoke (for a "
                   "real-config, small-data GPU-memory validation).")
+@click.option("--use-liger-kernel/--no-liger-kernel", default=True,
+             help="Disable use_liger_kernel (debug flag, see run_rlvr's docstring).")
 def main(prompts_path: str, base_adapter: str, out_dir: str, smoke: bool,
-        iters: int, group_size: int, max_steps: int | None) -> None:
+        iters: int, group_size: int, max_steps: int | None,
+        use_liger_kernel: bool) -> None:
     run_rlvr(prompts_path, base_adapter, out_dir, smoke=smoke, iters=iters,
-             group_size=group_size, max_steps=max_steps)
+             group_size=group_size, max_steps=max_steps,
+             use_liger_kernel=use_liger_kernel)
     click.echo(f"wrote checkpoint to {out_dir}-final")
 
 
