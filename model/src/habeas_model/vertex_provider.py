@@ -52,15 +52,19 @@ class VertexProvider:
         # stalled completely with max_workers=8, no error, no progress).
         self._token_lock = threading.Lock()
 
-    def _access_token(self) -> str:
+    def _access_token(self, force_refresh: bool = False) -> str:
         with self._token_lock:
-            # Refresh every 45 min — tokens are valid ~1hr, this leaves
-            # margin without shelling out to gcloud on every single call.
-            if self._token is None or (time.time() - self._token_fetched_at) > 45 * 60:
-                # timeout= is required, not optional: an ungraceful gcloud
-                # hang (lock contention, network hiccup) would otherwise
-                # block this thread — and, via the lock above, every other
-                # worker thread — forever.
+            # Refresh every 45 min — tokens are usually valid ~1hr, this
+            # leaves margin without shelling out to gcloud on every call.
+            # Time-based refresh alone isn't sufficient, though: a live
+            # ~1600-task run got a real token that expired well inside
+            # that 45-min window (807 consecutive 401s once it did, with
+            # no way to recover — every worker kept reusing the same
+            # stale cached string). `force_refresh` lets `complete()`
+            # invalidate the cache on a 401 and retry with a freshly
+            # minted token instead of trusting the clock alone.
+            stale = (time.time() - self._token_fetched_at) > 45 * 60
+            if force_refresh or self._token is None or stale:
                 out = subprocess.run(["gcloud", "auth", "print-access-token"],
                                      capture_output=True, text=True, check=True,
                                      timeout=30)
@@ -68,28 +72,35 @@ class VertexProvider:
                 self._token_fetched_at = time.time()
         return self._token
 
-    def complete(self, system: str, user: str, image_b64: str) -> str:
-        url = (f"https://{self.location}-aiplatform.googleapis.com/v1/projects/"
-              f"{self.project}/locations/{self.location}/publishers/google/"
-              f"models/{self.model}:generateContent")
+    def _request_body(self, system: str, user: str, image_b64: str) -> dict:
         parts: list[dict] = [{"text": user}]
         if image_b64:
             parts.insert(0, {"inline_data": {"mime_type": "image/png",
                                              "data": image_b64}})
-        body = {
+        return {
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": parts}],
             "generationConfig": {"temperature": 0.0},
         }
-        resp = requests.post(
-            url, timeout=self.timeout,
-            headers={"Authorization": f"Bearer {self._access_token()}",
-                    "Content-Type": "application/json"},
-            json=body)
-        resp.raise_for_status()
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return ""
-        parts_out = candidates[0].get("content", {}).get("parts", [])
-        return "".join(p.get("text", "") for p in parts_out)
+
+    def complete(self, system: str, user: str, image_b64: str) -> str:
+        url = (f"https://{self.location}-aiplatform.googleapis.com/v1/projects/"
+              f"{self.project}/locations/{self.location}/publishers/google/"
+              f"models/{self.model}:generateContent")
+        body = self._request_body(system, user, image_b64)
+        for attempt, force_refresh in enumerate([False, True]):
+            resp = requests.post(
+                url, timeout=self.timeout,
+                headers={"Authorization": f"Bearer {self._access_token(force_refresh)}",
+                        "Content-Type": "application/json"},
+                json=body)
+            if resp.status_code == 401 and attempt == 0:
+                continue  # retry once with a forcibly refreshed token
+            resp.raise_for_status()
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return ""
+            parts_out = candidates[0].get("content", {}).get("parts", [])
+            return "".join(p.get("text", "") for p in parts_out)
+        raise AssertionError("unreachable")  # loop always returns or raises
