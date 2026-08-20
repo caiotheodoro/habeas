@@ -195,17 +195,35 @@ def build_dataset(tasks_path: str, out_path: str,
     done = _already_built_task_ids(out_path)
     pending = [t for t in tasks if t.task_id not in done]
     n_written = 0
+    n_errors = 0
     with open(out_path, "a") as f:
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = {ex.submit(build_record, t, target_source, teacher): t
                       for t in pending}
             for fut in as_completed(futures):
-                record = fut.result()
+                t = futures[fut]
+                try:
+                    record = fut.result()
+                except Exception as e:
+                    # A single transient failure (network timeout, rate
+                    # limit, malformed response) must not abort the whole
+                    # ~1600-task run and lose every already-completed
+                    # result not yet flushed — treat it like a
+                    # verifier-filtered drop (this task_id stays absent
+                    # from out_path, so a resumed run will retry it) and
+                    # keep going. Logged, not silent.
+                    print(f"[dataset_builder] teacher call failed for "
+                         f"{t.task_id}: {e!r}")
+                    n_errors += 1
+                    continue
                 if record is None:
                     continue  # verifier-filtered out
                 f.write(json.dumps(record, separators=(",", ":")) + "\n")
                 f.flush()
                 n_written += 1
+    if n_errors:
+        print(f"[dataset_builder] {n_errors} task(s) failed (see above) — "
+             f"re-run the same command to retry them (resumable).")
     return n_written
 
 

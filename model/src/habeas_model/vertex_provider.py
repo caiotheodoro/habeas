@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import subprocess
+import threading
 import time
 
 import requests
@@ -40,15 +41,31 @@ class VertexProvider:
         self.timeout = timeout
         self._token: str | None = None
         self._token_fetched_at: float = 0.0
+        # dataset_builder.build_dataset calls complete() from a
+        # ThreadPoolExecutor (teacher distillation at ~1600-task scale) —
+        # without a lock, every worker thread sees self._token is None on
+        # first use and spawns its own `gcloud auth print-access-token`
+        # concurrently. That's not just wasteful: gcloud's config
+        # directory uses its own file locking, and N simultaneous
+        # invocations can serialize on that lock badly enough to look
+        # like an indefinite hang (found live — a real distillation run
+        # stalled completely with max_workers=8, no error, no progress).
+        self._token_lock = threading.Lock()
 
     def _access_token(self) -> str:
-        # Refresh every 45 min — tokens are valid ~1hr, this leaves margin
-        # without shelling out to gcloud on every single call.
-        if self._token is None or (time.time() - self._token_fetched_at) > 45 * 60:
-            out = subprocess.run(["gcloud", "auth", "print-access-token"],
-                                 capture_output=True, text=True, check=True)
-            self._token = out.stdout.strip()
-            self._token_fetched_at = time.time()
+        with self._token_lock:
+            # Refresh every 45 min — tokens are valid ~1hr, this leaves
+            # margin without shelling out to gcloud on every single call.
+            if self._token is None or (time.time() - self._token_fetched_at) > 45 * 60:
+                # timeout= is required, not optional: an ungraceful gcloud
+                # hang (lock contention, network hiccup) would otherwise
+                # block this thread — and, via the lock above, every other
+                # worker thread — forever.
+                out = subprocess.run(["gcloud", "auth", "print-access-token"],
+                                     capture_output=True, text=True, check=True,
+                                     timeout=30)
+                self._token = out.stdout.strip()
+                self._token_fetched_at = time.time()
         return self._token
 
     def complete(self, system: str, user: str, image_b64: str) -> str:
