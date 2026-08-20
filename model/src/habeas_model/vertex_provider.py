@@ -88,14 +88,30 @@ class VertexProvider:
               f"{self.project}/locations/{self.location}/publishers/google/"
               f"models/{self.model}:generateContent")
         body = self._request_body(system, user, image_b64)
-        for attempt, force_refresh in enumerate([False, True]):
+        # 429s were the dominant failure mode in a live ~1600-task run at
+        # max_workers=8: a burst of concurrent calls trips this project's
+        # Vertex AI quota, and every 429 used to be a permanent failure
+        # for that pass (fine in isolation — build_dataset's teacher path
+        # is resumable — but wasteful: a full ~1600-task re-scan just to
+        # retry a few hundred quota-throttled calls). Retry with backoff
+        # instead, same as the 401-refresh retry already here.
+        max_attempts = 6
+        force_refresh = False
+        for attempt in range(max_attempts):
             resp = requests.post(
                 url, timeout=self.timeout,
                 headers={"Authorization": f"Bearer {self._access_token(force_refresh)}",
                         "Content-Type": "application/json"},
                 json=body)
-            if resp.status_code == 401 and attempt == 0:
-                continue  # retry once with a forcibly refreshed token
+            force_refresh = False
+            if resp.status_code == 401 and attempt < max_attempts - 1:
+                force_refresh = True
+                continue
+            if resp.status_code == 429 and attempt < max_attempts - 1:
+                retry_after = resp.headers.get("Retry-After")
+                delay = float(retry_after) if retry_after else min(2 ** attempt, 30)
+                time.sleep(delay)
+                continue
             resp.raise_for_status()
             data = resp.json()
             candidates = data.get("candidates", [])
