@@ -54,8 +54,17 @@ class LocalHFProvider:
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ]
+        # enable_thinking defaults to True in Qwen3's chat template (the
+        # template checks `enable_thinking is undefined or ... is true`) —
+        # without explicitly disabling it, the model emits step-by-step
+        # reasoning prose instead of the trained JSON-only output, blowing
+        # past max_new_tokens before ever reaching a verdict. CONTRACTS.md
+        # §6 requires non-thinking verdict output; found via an actual
+        # eval run on GCP (raw completion was pure CoT prose, no JSON —
+        # see docs/DECISIONS.md).
         inputs = self.processor.apply_chat_template(
             messages, tokenize=True, add_generation_prompt=True,
+            enable_thinking=False,
             return_dict=True, return_tensors="pt").to(self.model.device)
         with self._torch.no_grad():
             out = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens,
