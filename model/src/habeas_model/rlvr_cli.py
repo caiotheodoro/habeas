@@ -43,7 +43,7 @@ def _load_rlvr_records(prompts_path: str, smoke: bool) -> list[dict]:
 def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
              smoke: bool = False, iters: int = 200, group_size: int = 8,
              max_steps: int | None = None, use_liger_kernel: bool = True,
-             batch_size: int = 1, grad_accum: int = 4) -> None:
+             batch_size: int = 1, grad_accum: int = 8) -> None:
     """Train an RL-tuned adapter on top of an SFT adapter via GRPO/GSPO
     against the forge oracle reward.
 
@@ -107,6 +107,15 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
             # 3.79 GiB" on a 39.49GB A100) once liger_kernel was disabled to
             # work around the image-batching bug above. 1/4 mirrors what
             # actually fit train_cli.run_sft on this same A100.
+            # GRPOConfig requires generation_batch_size (=
+            # per_device_train_batch_size * num_processes *
+            # gradient_accumulation_steps, when steps_per_generation isn't
+            # set explicitly) to be evenly divisible by num_generations —
+            # found live (ValueError at __post_init__) when batch_size=1,
+            # grad_accum=4, group_size=8 (4 not divisible by 8). Default
+            # grad_accum=8 keeps batch_size*grad_accum a clean multiple of
+            # the default group_size; callers changing group_size should
+            # keep grad_accum a multiple of it too.
             per_device_train_batch_size=batch_size,
             gradient_accumulation_steps=grad_accum,
             # Same fixed fp32-lm_head-upcast OOM as SFT (see train_cli.py's
@@ -141,7 +150,9 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
 @click.option("--use-liger-kernel/--no-liger-kernel", default=True,
              help="Disable use_liger_kernel (debug flag, see run_rlvr's docstring).")
 @click.option("--batch-size", default=1, help="per_device_train_batch_size.")
-@click.option("--grad-accum", default=4, help="gradient_accumulation_steps.")
+@click.option("--grad-accum", default=8,
+             help="gradient_accumulation_steps. Must combine with --batch-size "
+                  "to be a multiple of --group-size (GRPOConfig constraint).")
 def main(prompts_path: str, base_adapter: str, out_dir: str, smoke: bool,
         iters: int, group_size: int, max_steps: int | None,
         use_liger_kernel: bool, batch_size: int, grad_accum: int) -> None:
