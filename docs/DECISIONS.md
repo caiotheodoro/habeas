@@ -902,3 +902,20 @@ only with measured evidence.
   Instance `habeas-rlvr-0820-0244` deleted; RLVR is paused, SFT-only
   checkpoint (`checkpoints/sft-final/`, eval numbers above) remains the
   current best artifact.
+- **Confirmed DETERMINISTIC, not flaky (habeas-rlvr-0820-1012, same day,
+  full retry of the identical config)**: same 8-record smoke set, same
+  flags (`--no-liger-kernel --batch-size 1 --grad-accum 8`), same 3 clean
+  steps, then the **exact same** error at step 4 — `tokens: 639, features:
+  638`, byte-identical to the first attempt's numbers. Rules out a
+  race/nondeterminism theory entirely: this is a specific micro-batch
+  composition reached deterministically at step 4 of this smoke set that
+  reliably triggers TRL's image-token/feature-count bug. A third retry
+  would almost certainly reproduce it again — not worth the GPU spend to
+  confirm further. Instance deleted. **Decision: pause RLVR here** rather
+  than invest in a blind monkeypatch of TRL internals we can't fully see
+  (real risk: a wrong patch could silently corrupt logprob computation
+  instead of loudly crashing, which is worse than the current failure
+  mode). Next real attempt should either (a) get a genuine fix/version
+  from upstream trl, or (b) deliberately trade away part of GSPO's
+  group-relative design (e.g. `group_size=1`, sacrificing the
+  group-normalization RLVR depends on) as a fallback, not a first choice.

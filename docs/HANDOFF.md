@@ -103,14 +103,16 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
    run to 3/5 steps clean, then hit an intermittent "Image features and
    image tokens do not match" error that survives disabling
    `use_liger_kernel` — looks like TRL's own documented multi-image-batch
-   -splitting bug (huggingface/trl#4488), not something fixable from this
-   repo's side without either monkey-patching TRL internals or finding a
-   trl version without the regression. **Paused, not abandoned** — next
-   session should try the PR #6570 monkeypatch or a trl version bisect
-   before more blind smoke attempts. `checkpoints/sft-final/` (the SFT-
-   only adapter, eval numbers above) remains the current best artifact;
-   HF upload stays deferred until RLVR either lands or is deliberately
-   descoped.
+   -splitting bug (huggingface/trl#4488). **Confirmed deterministic on a
+   full retry** (identical failure, same token counts, same step) — not a
+   flaky race, so a third retry isn't worth the GPU spend. Not fixable
+   from this repo's side without either a real trl fix/version or trading
+   away GSPO's group_size>1 design. **Paused, not abandoned** — next
+   session should try the PR #6570 monkeypatch (with real trl source in
+   hand, not blind) or a trl version bisect. `checkpoints/sft-final/`
+   (the SFT-only adapter, eval numbers above) remains the current best
+   artifact; HF upload stays deferred until RLVR either lands or is
+   deliberately descoped.
 1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the
