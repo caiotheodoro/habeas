@@ -17,6 +17,7 @@ dependencies = [
     "click>=8.1",
     "numpy>=1.26",
     "bitsandbytes>=0.44",
+    "requests>=2.31",
     # liger-kernel pulls in triton, which has no macOS wheel — Linux-only
     # (cloud training boxes); local dev/tests never import it.
     "liger-kernel; sys_platform == 'linux'",

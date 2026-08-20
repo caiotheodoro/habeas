@@ -155,3 +155,62 @@ def test_build_dataset_writes_jsonl(tmp_path):
     for line in lines:
         rec = json.loads(line)
         assert "messages" in rec and "task_id" in rec
+
+
+def test_build_dataset_teacher_concurrent_matches_sequential(tmp_path):
+    # max_workers>1 must produce the same set of kept records as the
+    # sequential path (only ordering may differ). Restricted to
+    # n_violations=0 (PASS, empty violations) tasks so one shared canned
+    # answer validly matches every task — keeps this test focused on the
+    # concurrency/resumability wiring, not per-task filtering (already
+    # covered by test_build_record_teacher_source_* above).
+    rng = random.Random(10)
+    pass_tasks = []
+    while len(pass_tasks) < 4:
+        t = generate.task(rng, seed=10, n_violations=0)
+        if t.expected.verdict == "PASS" and not t.expected.violations:
+            pass_tasks.append(t)
+    tasks_path = tmp_path / "pass_tasks.jsonl"
+    with open(tasks_path, "w") as f:
+        for t in pass_tasks:
+            f.write(t.model_dump_json() + "\n")
+    provider = _EchoOracleProvider('{"verdict": "PASS", "violations": []}')
+
+    out_seq = tmp_path / "seq.jsonl"
+    out_conc = tmp_path / "conc.jsonl"
+    n_seq = build_dataset(str(tasks_path), str(out_seq), target_source="teacher",
+                          teacher=provider, max_workers=1)
+    n_conc = build_dataset(str(tasks_path), str(out_conc), target_source="teacher",
+                           teacher=provider, max_workers=4)
+    assert n_seq == n_conc == 4
+    seq_ids = {json.loads(l)["task_id"] for l in out_seq.read_text().strip().splitlines()}
+    conc_ids = {json.loads(l)["task_id"] for l in out_conc.read_text().strip().splitlines()}
+    assert seq_ids == conc_ids
+
+
+def test_build_dataset_teacher_resumable(tmp_path):
+    rng = random.Random(11)
+    pass_tasks = []
+    while len(pass_tasks) < 3:
+        t = generate.task(rng, seed=11, n_violations=0)
+        if t.expected.verdict == "PASS" and not t.expected.violations:
+            pass_tasks.append(t)
+    tasks_path = tmp_path / "tasks.jsonl"
+    with open(tasks_path, "w") as f:
+        for t in pass_tasks:
+            f.write(t.model_dump_json() + "\n")
+    out_path = tmp_path / "sft.jsonl"
+    provider = _EchoOracleProvider('{"verdict": "PASS", "violations": []}')
+
+    n1 = build_dataset(str(tasks_path), str(out_path), target_source="teacher",
+                       teacher=provider, max_workers=2)
+    assert n1 == 3
+    # Re-running against the same out_path with the same tasks must write
+    # nothing new — every task_id is already present (real-API-call cost
+    # matters here; a restart after a transient failure shouldn't redo
+    # already-completed work).
+    n2 = build_dataset(str(tasks_path), str(out_path), target_source="teacher",
+                       teacher=provider, max_workers=2)
+    assert n2 == 0
+    lines = out_path.read_text().strip().splitlines()
+    assert len(lines) == 3

@@ -146,19 +146,66 @@ def build_record(task: Task, target_source: Literal["oracle", "teacher"] = "orac
     }
 
 
+def _already_built_task_ids(out_path: str) -> set[str]:
+    if not os.path.exists(out_path):
+        return set()
+    ids = set()
+    with open(out_path) as f:
+        for line in f:
+            if line.strip():
+                ids.add(json.loads(line)["task_id"])
+    return ids
+
+
 def build_dataset(tasks_path: str, out_path: str,
                   target_source: Literal["oracle", "teacher"] = "oracle",
-                  teacher: Provider | None = None) -> int:
+                  teacher: Provider | None = None, max_workers: int = 1) -> int:
+    """Build an SFT-record JSONL from a task file.
+
+    `target_source="teacher"` with `max_workers > 1`: concurrent + append-
+    resumable, same pattern as `benchmark_eval.run_eval` — each teacher
+    call is an independent network round-trip (VertexProvider), so a
+    ~1600-task corpus at sequential ~3-10s/call would take hours; a
+    thread pool is the same fix `run_eval` already applies for exactly
+    this reason. Resumable: re-running with the same `out_path` skips
+    task_ids already written (real API calls, real cost — don't redo work
+    on a restart after a transient failure). `target_source="oracle"`
+    stays the original fast sequential path (no network calls, no need
+    for either concurrency or resume).
+    """
     tasks = _load_tasks(tasks_path)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+
+    if target_source == "oracle" or max_workers <= 1:
+        n_written = 0
+        mode = "a" if target_source == "teacher" else "w"
+        done = _already_built_task_ids(out_path) if mode == "a" else set()
+        with open(out_path, mode) as f:
+            for t in tasks:
+                if t.task_id in done:
+                    continue
+                record = build_record(t, target_source=target_source, teacher=teacher)
+                if record is None:
+                    continue  # verifier-filtered out (teacher trace didn't match oracle)
+                f.write(json.dumps(record, separators=(",", ":")) + "\n")
+                n_written += 1
+        return n_written
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    done = _already_built_task_ids(out_path)
+    pending = [t for t in tasks if t.task_id not in done]
     n_written = 0
-    with open(out_path, "w") as f:
-        for t in tasks:
-            record = build_record(t, target_source=target_source, teacher=teacher)
-            if record is None:
-                continue  # verifier-filtered out (teacher trace didn't match oracle)
-            f.write(json.dumps(record, separators=(",", ":")) + "\n")
-            n_written += 1
+    with open(out_path, "a") as f:
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            futures = {ex.submit(build_record, t, target_source, teacher): t
+                      for t in pending}
+            for fut in as_completed(futures):
+                record = fut.result()
+                if record is None:
+                    continue  # verifier-filtered out
+                f.write(json.dumps(record, separators=(",", ":")) + "\n")
+                f.flush()
+                n_written += 1
     return n_written
 
 
@@ -209,9 +256,25 @@ def cli():
 @cli.command()
 @click.option("--tasks-file", required=True)
 @click.option("--out", required=True)
-def build(tasks_file: str, out: str) -> None:
-    n = build_dataset(tasks_file, out)
-    click.echo(f"wrote {n} SFT records to {out}")
+@click.option("--target-source", type=click.Choice(["oracle", "teacher"]), default="oracle")
+@click.option("--teacher-project", default=None,
+             help="GCP project for Vertex AI (required if --target-source=teacher).")
+@click.option("--teacher-location", default="us-central1")
+@click.option("--teacher-model", default="gemini-2.5-flash")
+@click.option("--max-workers", default=1,
+             help="Concurrent teacher calls (ignored for --target-source=oracle).")
+def build(tasks_file: str, out: str, target_source: str, teacher_project: str | None,
+         teacher_location: str, teacher_model: str, max_workers: int) -> None:
+    teacher = None
+    if target_source == "teacher":
+        if not teacher_project:
+            raise click.UsageError("--teacher-project is required when --target-source=teacher")
+        from .vertex_provider import VertexProvider
+        teacher = VertexProvider(project=teacher_project, location=teacher_location,
+                                 model=teacher_model)
+    n = build_dataset(tasks_file, out, target_source=target_source, teacher=teacher,
+                      max_workers=max_workers)
+    click.echo(f"wrote {n} SFT records to {out} (target_source={target_source})")
 
 
 @cli.command()
