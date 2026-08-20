@@ -42,7 +42,8 @@ def _load_rlvr_records(prompts_path: str, smoke: bool) -> list[dict]:
 
 def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
              smoke: bool = False, iters: int = 200, group_size: int = 8,
-             max_steps: int | None = None, use_liger_kernel: bool = True) -> None:
+             max_steps: int | None = None, use_liger_kernel: bool = True,
+             batch_size: int = 1, grad_accum: int = 4) -> None:
     """Train an RL-tuned adapter on top of an SFT adapter via GRPO/GSPO
     against the forge oracle reward.
 
@@ -99,6 +100,15 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
             epsilon=0.2, epsilon_high=0.28,
             num_generations=group_size,
             max_steps=max_steps if max_steps is not None else (5 if smoke else iters),
+            # per_device_train_batch_size defaults to 8 (HF TrainingArguments'
+            # own default) if left unset — way too large for full multimodal
+            # (image + max_length-scale text) sequences during the logprob
+            # forward pass: a live smoke run OOM'd there ("Tried to allocate
+            # 3.79 GiB" on a 39.49GB A100) once liger_kernel was disabled to
+            # work around the image-batching bug above. 1/4 mirrors what
+            # actually fit train_cli.run_sft on this same A100.
+            per_device_train_batch_size=batch_size,
+            gradient_accumulation_steps=grad_accum,
             # Same fixed fp32-lm_head-upcast OOM as SFT (see train_cli.py's
             # comment / docs/DECISIONS.md) applies here too — GRPOConfig
             # exposes the same fused-loss escape hatch. Toggleable: a live
@@ -130,12 +140,15 @@ def run_rlvr(prompts_path: str, base_adapter: str, out_dir: str,
                   "real-config, small-data GPU-memory validation).")
 @click.option("--use-liger-kernel/--no-liger-kernel", default=True,
              help="Disable use_liger_kernel (debug flag, see run_rlvr's docstring).")
+@click.option("--batch-size", default=1, help="per_device_train_batch_size.")
+@click.option("--grad-accum", default=4, help="gradient_accumulation_steps.")
 def main(prompts_path: str, base_adapter: str, out_dir: str, smoke: bool,
         iters: int, group_size: int, max_steps: int | None,
-        use_liger_kernel: bool) -> None:
+        use_liger_kernel: bool, batch_size: int, grad_accum: int) -> None:
     run_rlvr(prompts_path, base_adapter, out_dir, smoke=smoke, iters=iters,
              group_size=group_size, max_steps=max_steps,
-             use_liger_kernel=use_liger_kernel)
+             use_liger_kernel=use_liger_kernel, batch_size=batch_size,
+             grad_accum=grad_accum)
     click.echo(f"wrote checkpoint to {out_dir}-final")
 
 
