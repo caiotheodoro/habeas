@@ -860,3 +860,45 @@ only with measured evidence.
   completion_shape`), and pushed before the smoke run was re-attempted —
   same live-iterate-on-real-hardware discipline as every other bug this
   session.
+- **3 more bugs found across re-attempts, in order**: (a) with liger
+  enabled, crashed inside `compute_liger_loss`'s vision forward with
+  "Image features and image tokens do not match, tokens: 5107, features:
+  5104" — disabling `use_liger_kernel` (new toggle added) got past it,
+  seeming to confirm a liger+multimodal-batching interaction; (b) with
+  liger disabled, `per_device_train_batch_size` defaulted to HF's
+  `TrainingArguments` default of 8 (never set explicitly) — OOM'd
+  ("Tried to allocate 3.79 GiB" on a 39.49GB A100) inside the logprob
+  forward pass; set explicit `batch_size=1`/`grad_accum` mirroring what
+  fit SFT; (c) `GRPOConfig.__post_init__` requires `generation_batch_size`
+  (`batch_size * grad_accum` by default) evenly divisible by
+  `num_generations` — `grad_accum=4` with `group_size=8` failed that
+  check; bumped default `grad_accum` to 8.
+- **Status: BLOCKED, not resolved.** With all of the above fixed
+  (`--no-liger-kernel --batch-size 1 --grad-accum 8`), the smoke run got
+  further than ever — 3/5 steps completed cleanly — then hit the **same**
+  "Image features and image tokens do not match" error again on step 4
+  (tokens: 639, features: 638, a different off-by-1 this time vs the
+  earlier off-by-3), this time **without liger enabled**. This disproves
+  the liger-specific theory from bug (a) above — the real bug is
+  independent of liger. Since `render_form()` always renders a fixed
+  700×920 canvas (constant across every task, no per-task image-size
+  variance), and the failure is intermittent (3 clean steps, then a
+  failure) rather than deterministic, this points at TRL's own documented
+  multi-image-batch-splitting bug (huggingface/trl#4488: "Missing
+  `image_grid_thw` variable in batch input skips the split processing on
+  `split_pixel_values_by_grid`") rather than anything in this repo's
+  code — each GRPO micro-batch effectively carries `num_generations`
+  duplicate copies of one source image, and TRL's own indexing of that
+  duplicated-image pixel-value block is apparently still fragile in the
+  installed `trl==1.10.0` for some (not all) micro-batch compositions,
+  despite that issue reportedly being fixed in trl>=0.25.0.
+- **Not attempted this round** (stopping to reassess rather than keep
+  guessing at real GPU cost — 5 live attempts, multiple hours of A100
+  wall-clock spent on this one blocker): monkey-patching TRL's
+  `split_pixel_values_by_grid`/`_get_per_token_logps_and_entropies` per
+  the fix described in trl#4488's closed PR #6570; bisecting trl versions
+  around 0.25.0 for a possible regression in 1.10.0; filing/checking for
+  an upstream trl issue matching this exact intermittent variant.
+  Instance `habeas-rlvr-0820-0244` deleted; RLVR is paused, SFT-only
+  checkpoint (`checkpoints/sft-final/`, eval numbers above) remains the
+  current best artifact.

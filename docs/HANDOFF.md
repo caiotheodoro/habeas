@@ -95,15 +95,22 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
 
 ## Next actions
 
-0. **P4 RLVR**: SFT eval done (see above). Next is
-   `cloud/modal_rlvr.py`/GCP equivalent, GRPO against
-   `oracle_reward_func`, using `checkpoints/sft-final/` as the base
-   adapter (`peft.PeftModel.from_pretrained(base, adapter,
-   is_trainable=True)`). Not yet live-verified on any GPU — same
-   live-debug-on-real-hardware pattern as SFT training/eval should be
-   expected. Re-eval against the golden set after, compare deltas. HF
-   upload is deferred until after this (user directive: "final version"
-   only).
+0. **P4 RLVR: BLOCKED (2026-08-20)**. Research-grounded rewrite (GSPO
+   sequence-level importance sampling, correct DAPO clip values, GCP-path
+   `rlvr_cli.py`) fixed 4 real bugs live (chat-template images kwarg,
+   `enable_thinking` default, `loss_type` GSPO-pairing, conversational
+   completion shape) — see docs/DECISIONS.md's RLVR entries. Got a smoke
+   run to 3/5 steps clean, then hit an intermittent "Image features and
+   image tokens do not match" error that survives disabling
+   `use_liger_kernel` — looks like TRL's own documented multi-image-batch
+   -splitting bug (huggingface/trl#4488), not something fixable from this
+   repo's side without either monkey-patching TRL internals or finding a
+   trl version without the regression. **Paused, not abandoned** — next
+   session should try the PR #6570 monkeypatch or a trl version bisect
+   before more blind smoke attempts. `checkpoints/sft-final/` (the SFT-
+   only adapter, eval numbers above) remains the current best artifact;
+   HF upload stays deferred until RLVR either lands or is deliberately
+   descoped.
 1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the
