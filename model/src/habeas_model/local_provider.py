@@ -38,15 +38,24 @@ class LocalHFProvider:
     def complete(self, system: str, user: str, image_b64: str) -> str:
         from PIL import Image
 
+        # Images go inline in the content list, not a top-level `images=`
+        # kwarg — apply_chat_template's Jinja template only emits the
+        # <|vision_start|><|image_pad|><|vision_end|> tokens for content
+        # items carrying an "image"/"image_url" key or type=="image"; a
+        # separate `images=` kwarg is not a recognized parameter and gets
+        # silently misrouted into processor.__call__'s kwargs instead
+        # (found via an actual eval run on GCP — TypeError from
+        # Qwen3VLProcessor, see docs/DECISIONS.md).
+        user_content: str | list[dict] = user
+        if image_b64:
+            img = Image.open(io.BytesIO(base64.b64decode(image_b64)))
+            user_content = [{"type": "image", "image": img}, {"type": "text", "text": user}]
         messages = [
             {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {"role": "user", "content": user_content},
         ]
-        images = []
-        if image_b64:
-            images = [Image.open(io.BytesIO(base64.b64decode(image_b64)))]
         inputs = self.processor.apply_chat_template(
-            messages, images=images, tokenize=True, add_generation_prompt=True,
+            messages, tokenize=True, add_generation_prompt=True,
             return_dict=True, return_tensors="pt").to(self.model.device)
         with self._torch.no_grad():
             out = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens,
