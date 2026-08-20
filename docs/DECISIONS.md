@@ -740,3 +740,30 @@ only with measured evidence.
   substitutions in `name_section1`) — would require the oracle to model OCR
   error tolerance, turning a rendering artifact into a ground-truth
   ambiguity; rejected as out of scope for this increment.
+
+## 2026-08-20 — P4 — Real SFT run COMPLETE ✓
+- Decision: full real SFT run (`GPU_TYPE=nvidia-tesla-a100 PREEMPTIBLE=true
+  BATCH_SIZE=2 GRAD_ACCUM=4`, 400 steps, full corpus/epochs) launched
+  2026-08-18 ~16:22 EDT on instance `habeas-train-0818-1622`, completed
+  2026-08-20 ~00:06 UTC. Adapter checkpoint pulled to local
+  `checkpoints/sft-final/` (986MB, LoRA adapter only — `checkpoints/` added
+  to `.gitignore`, not committed) and the GCE instance deleted.
+- Evidence: `train.log` final lines —
+  `train_runtime=9389s`, `train_loss≈0.0103` at completion, steady
+  `mean_token_accuracy` logged every 10 steps throughout. One preemption
+  occurred mid-run (step ~330s region) — checkpoint-resume worked exactly
+  as designed: restarted from `checkpoint-360` (the last periodic save
+  before the preempt), not from scratch. `checkpoint-400`/`sft-final` both
+  present and verified on disk (`du -sh` = 971MB on the instance, 986MB
+  after local tar/scp round-trip — difference is filesystem block
+  overhead, not data loss).
+- Real per-step pace observed: ~231-236s/it steady-state throughout (batch
+  size 2 change from earlier this session held up under the full run, not
+  just the short validation pass).
+- Not yet done: no eval run against `data/golden.jsonl` yet (needs a
+  `Provider` adapter wrapping this checkpoint + a GPU to run inference on —
+  next action, not done in this entry). RLVR stage (`cloud/modal_rlvr.py`,
+  GRPO against `oracle_reward_func`) also not yet started — per
+  `docs/TRAINING_PLAN.md`, uses this SFT adapter as its base.
+- User directive: HF upload deferred until "the final version" (i.e. after
+  eval/RLVR, not this raw SFT-only checkpoint).

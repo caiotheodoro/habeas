@@ -74,11 +74,23 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
   boot disk was too small (100GB — the model needs 70GB+, filled the disk
   mid-download and looked like network stalls before erroring outright;
   default is now 300GB), and added optional `HF_TOKEN` pass-through.
-  **A real full SFT run (full corpus, real epochs) has still not itself
-  been run** — only the bounded 5-step/50-task validation pass.
+- **P4 real SFT run: COMPLETE ✓ (2026-08-20)** — full corpus, real epochs,
+  A100 preemptible, batch_size=2/grad_accum=4, 400 steps, ran on
+  `habeas-train-0818-1622`. Survived one mid-run preemption via the
+  checkpoint-resume path (resumed from `checkpoint-360`, not from scratch).
+  Final `train_loss≈0.0103`, `train_runtime=9389s`. Adapter pulled to local
+  `checkpoints/sft-final/` (986MB, gitignored); instance deleted. See
+  DECISIONS.md's "Real SFT run COMPLETE" entry.
 
 ## Next actions
 
+0. **P4 eval + RLVR**: run `benchmark_eval.py` against `data/golden.jsonl`
+   using the new SFT adapter (`checkpoints/sft-final/`) to get real
+   accuracy/verdict-consistency numbers before anything else — needs a
+   `Provider` wired to local inference on GPU. Then RLVR
+   (`cloud/modal_rlvr.py`/GCP equivalent, GRPO against
+   `oracle_reward_func`) using this adapter as base. HF upload is deferred
+   until after this (user directive: "final version" only).
 1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the
