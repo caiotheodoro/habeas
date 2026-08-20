@@ -81,16 +81,29 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
   Final `train_loss≈0.0103`, `train_runtime=9389s`. Adapter pulled to local
   `checkpoints/sft-final/` (986MB, gitignored); instance deleted. See
   DECISIONS.md's "Real SFT run COMPLETE" entry.
+- **P4 SFT eval: DONE ✓ (2026-08-20)** — 150/1000 golden-set subsample on
+  `habeas-eval-0819-2225` (A100, deleted after):
+  `parse_rate=0.993, verdict_accuracy=0.927,
+  severity_weighted_recall=0.615, false_positives_per_task=0.313`. Two
+  live bugs fixed in the process (`local_provider.py`'s
+  `apply_chat_template` call — images must be inline in content blocks,
+  not an `images=` kwarg; and `enable_thinking=False` must be passed
+  explicitly or Qwen3's template defaults to CoT-prose output). Good
+  verdict calibration, weak violation-type precision — see DECISIONS.md
+  for the full interpretation. This is the target RLVR is meant to
+  improve, not a sign the SFT run needs redoing.
 
 ## Next actions
 
-0. **P4 eval + RLVR**: run `benchmark_eval.py` against `data/golden.jsonl`
-   using the new SFT adapter (`checkpoints/sft-final/`) to get real
-   accuracy/verdict-consistency numbers before anything else — needs a
-   `Provider` wired to local inference on GPU. Then RLVR
-   (`cloud/modal_rlvr.py`/GCP equivalent, GRPO against
-   `oracle_reward_func`) using this adapter as base. HF upload is deferred
-   until after this (user directive: "final version" only).
+0. **P4 RLVR**: SFT eval done (see above). Next is
+   `cloud/modal_rlvr.py`/GCP equivalent, GRPO against
+   `oracle_reward_func`, using `checkpoints/sft-final/` as the base
+   adapter (`peft.PeftModel.from_pretrained(base, adapter,
+   is_trainable=True)`). Not yet live-verified on any GPU — same
+   live-debug-on-real-hardware pattern as SFT training/eval should be
+   expected. Re-eval against the golden set after, compare deltas. HF
+   upload is deferred until after this (user directive: "final version"
+   only).
 1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the

@@ -767,3 +767,54 @@ only with measured evidence.
   `docs/TRAINING_PLAN.md`, uses this SFT adapter as its base.
 - User directive: HF upload deferred until "the final version" (i.e. after
   eval/RLVR, not this raw SFT-only checkpoint).
+
+## 2026-08-20 — P4 — Eval pipeline (2 live bugs) + first SFT eval numbers
+- Built `model/src/habeas_model/local_provider.py` (`LocalHFProvider`,
+  base+LoRA via transformers/peft, mirrors train_cli.py's exact 4-bit/
+  bfloat16 load config) and `eval_cli.py` wiring it into
+  `benchmark_eval.run_eval`. Two live bugs found running this on a GCP
+  A100 (instance `habeas-eval-0819-2225`), both fixed and pushed before a
+  usable eval completed:
+  1. `apply_chat_template(images=...)` — not a recognized parameter; gets
+     silently misrouted into `processor.__call__`'s kwargs, raising
+     `TypeError: Qwen3VLProcessor: ...`. Fix: images belong inline in the
+     message `content` list (`{"type": "image", "image": <PIL>}`) — the
+     Jinja template only emits `<|vision_start|><|image_pad|><|vision_end|>`
+     for content items carrying an image key, no separate kwarg needed.
+  2. Qwen3's chat template defaults `enable_thinking` to **True** when
+     unset (`{%- if enable_thinking is undefined or enable_thinking is
+     true %}`). Without explicitly passing `enable_thinking=False`, the
+     model emitted step-by-step CoT prose instead of the trained
+     JSON-only verdict, overrunning `max_new_tokens=512` before reaching
+     any parseable output (`predicted: null` on every task). CONTRACTS.md
+     §6 requires non-thinking output — this was silently violating it.
+  Both fixed via a live debug script isolating one task's raw completion
+  before re-running the full eval — same iterate-on-real-hardware pattern
+  as the training bugs.
+- **First real SFT-adapter eval, 150/1000 golden-set subsample** (seed
+  777 tasks, sequential subset — not random sample, a scope-reduction
+  decision made with the user to avoid a ~25hr full-1000 run before any
+  signal existed at all):
+  `parse_rate=0.993`, `verdict_accuracy=0.927`,
+  `severity_weighted_recall=0.615`, `false_positives_per_task=0.313`
+  (n=150, 114 violation-bearing tasks). Results:
+  `data/eval-results-sft-golden150.jsonl` (gitignored).
+- Interpretation: near-perfect JSON-format compliance and strong
+  PASS/FLAG calibration (92.7%) — the SFT adapter learned the output
+  contract and top-level verdict well. Severity-weighted recall (61.5%)
+  is the weak point: spot-checked example (task `i9-777-997742588`)
+  showed a correct FLAG verdict with the right severity/CFR citation but
+  the wrong violation *type* (`TIMELINESS` predicted vs
+  `FIELD_INCOMPLETE` expected) — plausible root-cause misclassification
+  rather than random noise. This is exactly the gap RLVR's
+  `oracle_reward_func` (exact type/severity match, not just verdict
+  match) is designed to close — proceeding to RLVR is the right next
+  step rather than a second SFT pass.
+- Per-task inference throughput: real, highly variable — observed
+  ~90s/task in short bursts up to ~600s/task at points, averaging
+  roughly 60-130s/task steady-state on one A100, single-sample sequential
+  generation (`max_workers=1`, no batching — GPU util sat at 37-39%
+  during generation, meaningful headroom unused; batching multiple
+  eval prompts per forward pass is a real speedup opportunity not
+  implemented here, flagged for a future eval-throughput pass rather
+  than blocking RLVR on it).
