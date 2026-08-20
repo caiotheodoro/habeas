@@ -11,14 +11,23 @@ from the SFT-trace JSONL `modal_train.py` consumes, so RLVR data can never
 be pointed at the SFT dataset by accident (methodology.md: "RLVR data
 never mixed into SFT").
 
-TRL API notes (verified against installed trl==0.24.0 during design, see
-docs/DECISIONS.md — re-verify against whatever trl version actually
-resolves at image-build time, since cloud/Dockerfile pins `trl>=0.16` with
-no upper bound):
-- `GRPOConfig.loss_type="dr_grpo"` is a native option (Dr. GRPO: no
-  per-token length normalization).
-- `GRPOConfig(epsilon=0.2, epsilon_high=1.0)` is DAPO's decoupled clip —
-  two native, separate fields.
+TRL API notes (re-verified 2026-08-20 against the installed model/.venv
+trl source directly, correcting two wrong values from the original
+design pass — see docs/DECISIONS.md's RLVR-research entry):
+- `GRPOConfig.loss_type="dapo"` is TRL's own current **default** (not
+  `"dr_grpo"` — one 2026 survey found the Dr. GRPO loss underperforming
+  plain DAPO in practice, matching TRL's own choice). Normalizes by
+  active-token count in the global accumulated batch; eliminates the same
+  length bias Dr. GRPO targets without Dr. GRPO's caveats.
+- `GRPOConfig(epsilon=0.2, epsilon_high=0.28)` is DAPO's actual paper
+  clip value — the earlier `epsilon_high=1.0` here was simply wrong,
+  confirmed against the installed `grpo_config.py` docstring ("Paper DAPO
+  recommends 0.28").
+- `GRPOConfig(importance_sampling_level="sequence")` — GSPO (sequence-
+  level importance sampling instead of GRPO's noisy token-level ratio).
+  This is the algorithm Qwen3 itself trains with, natively supported in
+  TRL, and directly relevant since our base model *is* Qwen3.8-27B
+  (arXiv:2507.18071).
 - Dynamic sampling of non-saturated prompt groups (DAPO's "drop/resample
   zero-reward-variance groups") is **not** natively supported — GRPOTrainer
   only logs `frac_reward_zero_std`, it doesn't filter. Deliberately shipped
@@ -42,54 +51,14 @@ image = modal.Image.from_dockerfile(str(Path(__file__).parent / "Dockerfile"))
               timeout=60 * 60 * 12)
 def rlvr(prompts: bytes, base_adapter: str, iters: int = 200,
          group_size: int = 8, smoke: bool = False) -> str:
-    import base64
-    import io
-    import json
+    import tempfile
 
-    from datasets import Dataset
-    from peft import PeftModel
-    from PIL import Image
-    from transformers import AutoModelForMultimodalLM, AutoProcessor, BitsAndBytesConfig
-    from trl import GRPOConfig, GRPOTrainer
+    from habeas_model.rlvr_cli import run_rlvr
 
-    from habeas_model.rlvr_reward import oracle_reward_func
-
-    records = [json.loads(line) for line in prompts.decode("utf-8").splitlines()
-              if line.strip()]
-    if smoke:
-        records = records[:8]
-    for r in records:
-        r["images"] = [Image.open(io.BytesIO(base64.b64decode(b)))
-                       for b in r.pop("images")]
-    ds = Dataset.from_list(records)  # columns: task_id, prompt, images, expected_verdict
-
-    # Same VRAM/API constraints as train_cli.run_sft (see its comment and
-    # docs/DECISIONS.md): 4-bit required to fit an L4, quantization_config
-    # not a bare load_in_4bit kwarg, dtype= not torch_dtype=.
-    base = AutoModelForMultimodalLM.from_pretrained(
-        "Qwen/Qwen3.8-27B", device_map="auto", dtype="bfloat16",
-        quantization_config=BitsAndBytesConfig(load_in_4bit=True))
-    model = PeftModel.from_pretrained(base, base_adapter, is_trainable=True)
-    processor = AutoProcessor.from_pretrained("Qwen/Qwen3.8-27B")
-
-    trainer = GRPOTrainer(
-        model=model,
-        reward_funcs=oracle_reward_func,
-        processing_class=processor,
-        args=GRPOConfig(
-            output_dir="/checkpoints/rlvr",
-            loss_type="dr_grpo",
-            epsilon=0.2, epsilon_high=1.0,
-            num_generations=group_size,
-            max_steps=5 if smoke else iters,
-            # Same fixed fp32-lm_head-upcast OOM as SFT (see train_cli.py's
-            # comment / docs/DECISIONS.md) applies here too — GRPOConfig
-            # exposes the same fused-loss escape hatch.
-            use_liger_kernel=True,
-        ),
-        train_dataset=ds,
-    )
-    trainer.train()
-    trainer.save_model("/checkpoints/rlvr-final")
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".jsonl", delete=False) as f:
+        f.write(prompts)
+        prompts_path = f.name
+    run_rlvr(prompts_path, base_adapter, "/checkpoints/rlvr", smoke=smoke,
+             iters=iters, group_size=group_size)
     vol.commit()
     return "done"

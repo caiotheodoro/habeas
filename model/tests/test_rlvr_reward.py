@@ -29,6 +29,101 @@ def test_rlvr_reward_unparseable():
     assert rlvr_reward("not json", task.expected) == -1.0
 
 
+def test_rlvr_reward_empty_string_unparseable():
+    rng = random.Random(23)
+    task = generate.task(rng, seed=23, n_violations=1)
+    assert rlvr_reward("", task.expected) == -1.0
+
+
+def test_rlvr_reward_malformed_json_unparseable():
+    rng = random.Random(24)
+    task = generate.task(rng, seed=24, n_violations=1)
+    assert rlvr_reward("{not: valid, json!!", task.expected) == -1.0
+
+
+def test_rlvr_reward_extra_fields_do_not_break_parsing():
+    # Pydantic ignores unrecognized extra fields by default — a completion
+    # padded with junk keys should score identically to the clean version,
+    # not error out and score as unparseable (that would make the reward
+    # brittle to harmless format drift, not a real correctness signal).
+    rng = random.Random(25)
+    task = generate.task(rng, seed=25, n_violations=1)
+    v = task.expected.violations[0]
+    clean = {
+        "verdict": task.expected.verdict,
+        "violations": [{"type": v.type.value, "severity": v.severity.value,
+                        "field": v.field, "observed": v.observed,
+                        "expected": v.expected, "cfr": v.cfr,
+                        "correction": v.correction}],
+    }
+    padded = json.loads(json.dumps(clean))
+    padded["confidence"] = 0.99
+    padded["violations"][0]["extra_note"] = "unexpected field"
+    r_clean = rlvr_reward(json.dumps(clean), task.expected)
+    r_padded = rlvr_reward(json.dumps(padded), task.expected)
+    assert r_padded == r_clean
+
+
+def test_rlvr_reward_no_free_lunch_for_pass_with_violations_listed():
+    # A completion claiming PASS while listing violations is internally
+    # inconsistent — verdict_correct is False whenever expected is FLAG,
+    # so the reward must not reach the fully-correct ceiling even if the
+    # listed violation instances happen to match.
+    rng = random.Random(26)
+    task = generate.task(rng, seed=26, n_violations=1)
+    assert task.expected.verdict == "FLAG"  # n_violations=1 guarantees FLAG
+    v = task.expected.violations[0]
+    inconsistent = json.dumps({
+        "verdict": "PASS",
+        "violations": [{"type": v.type.value, "severity": v.severity.value,
+                        "field": v.field, "observed": v.observed,
+                        "expected": v.expected, "cfr": v.cfr,
+                        "correction": v.correction}],
+    })
+    correct = json.dumps({
+        "verdict": "FLAG",
+        "violations": [{"type": v.type.value, "severity": v.severity.value,
+                        "field": v.field, "observed": v.observed,
+                        "expected": v.expected, "cfr": v.cfr,
+                        "correction": v.correction}],
+    })
+    assert rlvr_reward(inconsistent, task.expected) < rlvr_reward(correct, task.expected)
+
+
+def test_rlvr_reward_no_free_lunch_for_flag_with_empty_violations():
+    # Claiming FLAG (verdict_correct) but listing zero violations should
+    # score worse than actually catching the violation — verdict_bonus
+    # alone must not be enough to reach the ceiling.
+    rng = random.Random(27)
+    task = generate.task(rng, seed=27, n_violations=1)
+    empty = json.dumps({"verdict": "FLAG", "violations": []})
+    correct = json.dumps({
+        "verdict": task.expected.verdict,
+        "violations": [{"type": v.type.value, "severity": v.severity.value,
+                        "field": v.field, "observed": v.observed,
+                        "expected": v.expected, "cfr": v.cfr,
+                        "correction": v.correction}
+                       for v in task.expected.violations],
+    })
+    assert rlvr_reward(empty, task.expected) < rlvr_reward(correct, task.expected)
+
+
+def test_rlvr_reward_duplicated_violations_do_not_inflate_reward():
+    # score_predictions dedupes via a set of (type, severity) pairs —
+    # repeating the same correct violation many times must not score
+    # higher than listing it once (no reward for padding the list).
+    rng = random.Random(28)
+    task = generate.task(rng, seed=28, n_violations=1)
+    v = task.expected.violations[0]
+    entry = {"type": v.type.value, "severity": v.severity.value,
+            "field": v.field, "observed": v.observed, "expected": v.expected,
+            "cfr": v.cfr, "correction": v.correction}
+    once = json.dumps({"verdict": task.expected.verdict, "violations": [entry]})
+    five_times = json.dumps({"verdict": task.expected.verdict,
+                             "violations": [entry] * 5})
+    assert rlvr_reward(five_times, task.expected) == rlvr_reward(once, task.expected)
+
+
 def test_oracle_reward_func_batch_aligned():
     rng = random.Random(22)
     tasks = [generate.task(rng, seed=22, n_violations=1) for _ in range(3)]

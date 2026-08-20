@@ -180,6 +180,15 @@ def build_rlvr_prompt(task: Task) -> dict:
         ],
         "images": [image_b64],
         "expected_verdict": task.expected.model_dump_json(),
+        # Qwen3's chat template defaults enable_thinking to True unless
+        # explicitly disabled — trl's apply_chat_template forwards a
+        # per-example "chat_template_kwargs" dict straight through to the
+        # renderer (see trl/data_utils.py). Without this, GRPO rollouts
+        # would burn max_completion_length on CoT prose instead of the
+        # trained JSON-only verdict, same as the eval bug found live on
+        # GCP (see docs/DECISIONS.md) — fixed here proactively instead of
+        # rediscovering it after burning a real RLVR run on it.
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
 
