@@ -113,6 +113,22 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
    (the SFT-only adapter, eval numbers above) remains the current best
    artifact; HF upload stays deferred until RLVR either lands or is
    deliberately descoped.
+0b. **P4 teacher distillation: NEGATIVE RESULT (2026-08-21)**. Built
+   `vertex_provider.py` (Gemini via Vertex AI), fixed 2 real bugs
+   (prompt's missing closed vocabulary, thread-safety/retry gaps), then
+   hit a hard quota wall (`gemini-2.5-flash` has no dedicated per-project
+   quota, stuck on a non-adjustable system default — confirmed both via
+   `gcloud` and the Console, no self-service fix). Only collected 399/1597
+   task records before quota made further collection impractical
+   (~150+ hours at sustainable throughput). Retrained SFT on that smaller
+   set anyway (`checkpoints/sft-teacher-final/`) — **eval came back worse
+   on every metric** than the original oracle-only SFT (verdict_accuracy
+   78.0% vs 92.7%, severity_weighted_recall 39.8% vs 61.5%). Confounded by
+   ~4x less data/fewer steps, not a clean read on teacher distillation as
+   a technique — see docs/DECISIONS.md for full numbers. **Net: no change
+   to current best artifact** — `checkpoints/sft-final/` (oracle-only)
+   still stands. Revisiting needs either a quota increase (support
+   ticket) or accepting the smaller-corpus confound as unavoidable.
 1. **P1 remainder**: M-274 Handbook chapter numbers (as opposed to 8 CFR
    subsections, all verified) were cross-referenced via search excerpts, not
    a full chapter-by-chapter PDF read — worth a follow-up pass against the

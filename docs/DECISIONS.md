@@ -919,3 +919,73 @@ only with measured evidence.
   from upstream trl, or (b) deliberately trade away part of GSPO's
   group-relative design (e.g. `group_size=1`, sacrificing the
   group-normalization RLVR depends on) as a fallback, not a first choice.
+
+## 2026-08-21 — P4 — Teacher distillation attempted: negative result
+- **Decision (user)**: pause RLVR (blocked, see above), pursue teacher
+  distillation as the next lever instead — SFT was trained on raw oracle
+  targets, not verifier-filtered teacher traces per methodology.md's
+  actual Stage 2 spec, and the eval gap (weak violation-type recall,
+  strong verdict/format) looked like exactly what real reasoning traces
+  from a stronger model might fix.
+- **Infra built**: `model/src/habeas_model/vertex_provider.py`
+  (`VertexProvider`, Gemini via Vertex AI REST API, `gcloud auth
+  print-access-token` auth — no new credentials, reuses the existing GCP
+  project). Live-found and fixed 2 bugs before any real distillation
+  volume: (1) `SYSTEM_PROMPT` never enumerated the actual
+  `ViolationType`/`Severity` values, so the teacher invented its own
+  labels the verifier-filter silently rejected — fixed by building the
+  enum list into the prompt from `habeas_forge.schema` directly; (2)
+  `_access_token`'s naive thread-safety and time-based-only refresh
+  caused a real stalled run (8 concurrent `gcloud` calls contending on
+  its own config-directory lock) and a real 807-call 401 cascade
+  (token expired inside the 45-min refresh window) — fixed with a
+  `threading.Lock` + retry-on-401-with-forced-refresh + retry-with-
+  backoff-on-429.
+- **Quota wall**: `gemini-2.5-flash` (the only servable model — all
+  `gemini-1.5-*`/`gemini-pro`/`gemini-experimental`/`model-optimizer`
+  quota rows are stale metadata, 404 on actual `generateContent` calls)
+  has no dedicated per-model quota in this project; it falls under a
+  non-adjustable system-default bucket (confirmed both via `gcloud alpha
+  services quota update` — `COMMON_QUOTA_CONSUMER_OVERRIDE_TOO_HIGH, max:
+  0` — and via the Console UI, user-confirmed "not adjusted"/no
+  self-service option). At `max_workers=8` this saturated into a 429
+  cascade; even at `max_workers=3` sustained throughput was ~2 records/15
+  min (~150+ hours to complete the full 1597-task corpus) — genuinely
+  impractical. No self-service fix exists; a real fix would need a
+  Google Cloud support ticket (uncertain timeline, possibly needs a paid
+  support tier), not pursued further this round.
+- **Decision (user)**: stop at whatever was collected (399 verifier-
+  filtered records, ~25% of the 1597-task corpus) rather than wait on
+  quota, and retrain SFT on that set to see if distillation helps at all
+  even at reduced scale.
+- **Real retrain**: `habeas-train-0820-1627`, A100 preemptible, same
+  `batch_size=2/grad_accum=4` as the original SFT run, 399 records → 100
+  steps (vs. the original's 1597 records → 400 steps), survived one
+  preemption via checkpoint-resume (resumed from step 6, not from
+  scratch). Final `train_loss≈0.077`. Checkpoint:
+  `checkpoints/sft-teacher-final/` (local, gitignored).
+- **Eval result — NEGATIVE across every metric**, 150-task golden
+  subsample (same subsample as the oracle-only baseline, apples-to-apples
+  on the eval side):
+
+  | Metric | Oracle-only SFT (1597 recs/400 steps) | Teacher-distilled (399 recs/100 steps) |
+  |---|---|---|
+  | parse_rate | 0.993 | 0.960 |
+  | verdict_accuracy | 0.927 | 0.780 |
+  | severity_weighted_recall | 0.615 | 0.398 |
+  | false_positives_per_task | 0.313 | 0.740 |
+
+  Reported honestly, not spun: this is a real regression, not a wash.
+  **Confounded, not a clean test of "teacher distillation" as a
+  technique** — the teacher-distilled run also had ~4x less data and ~4x
+  fewer training steps than the baseline, either of which alone could
+  plausibly explain a drop this size. A fair test would need a
+  teacher-distilled corpus matching the oracle run's full 1597-task
+  scale, which the quota wall above made infeasible this round.
+  `data/sft-train-teacher.jsonl` (399 records) and the raw eval results
+  are the artifacts if this is revisited once quota is available.
+- **Net effect on "current best artifact"**: unchanged —
+  `checkpoints/sft-final/` (the original oracle-only SFT adapter) remains
+  the best-performing checkpoint measured so far.
+  `checkpoints/sft-teacher-final/` is kept locally for reference/
+  possible future analysis but is not promotable given these numbers.
