@@ -10,19 +10,32 @@ def score_predictions(expected: Verdict, predicted: Verdict | None) -> dict[str,
     parsed = predicted is not None
     if not parsed:
         return {"caught": 0.0, "total": 0.0, "fp": 0.0, "parsed": 0.0,
-                "verdict_correct": 0.0}
+                "verdict_correct": 0.0, "cfr_correct": 0.0, "cfr_total": 0.0}
     exp = {(v.type, v.severity) for v in expected.violations}
     pred = {(v.type, v.severity) for v in predicted.violations}
     total = sum(SEVERITY_WEIGHTS[s] for _, s in exp)
     caught = sum(SEVERITY_WEIGHTS[s] for t, s in exp if (t, s) in pred)
     fp = sum(1 for t, s in pred if (t, s) not in exp)
+    # Citation exact-match (README.md's promotion gate target, >95%):
+    # among the violation *instances* the model actually caught (correct
+    # type+severity — a miss or a false positive can't be "cited
+    # correctly," there's nothing to compare), does its `cfr` string match
+    # the oracle's exactly? Denominator is instance count, not
+    # severity-weighted, since citation correctness is a per-instance
+    # binary property, not a recall-style weighted quantity.
+    pred_cfr = {(v.type, v.severity): v.cfr for v in predicted.violations}
+    caught_instances = [v for v in expected.violations if (v.type, v.severity) in pred]
+    cfr_total = float(len(caught_instances))
+    cfr_correct = sum(1.0 for v in caught_instances
+                      if pred_cfr.get((v.type, v.severity)) == v.cfr)
     # Violation-instance overlap (caught/total/fp) says nothing about
     # whether the top-level verdict string itself is right or even
     # self-consistent (e.g. "PASS" with violations listed, or "FLAG" with
     # none) — track that separately so callers don't have to infer it.
     verdict_correct = 1.0 if predicted.verdict == expected.verdict else 0.0
     return {"caught": caught, "total": total, "fp": fp, "parsed": 1.0,
-            "verdict_correct": verdict_correct}
+            "verdict_correct": verdict_correct, "cfr_correct": cfr_correct,
+            "cfr_total": cfr_total}
 
 
 def summarize(results: list[dict[str, float]]) -> dict[str, float]:
@@ -30,6 +43,7 @@ def summarize(results: list[dict[str, float]]) -> dict[str, float]:
     if not n:
         return {}
     total_w = sum(r["total"] for r in results)
+    cfr_total = sum(r.get("cfr_total", 0.0) for r in results)
     return {
         "n_tasks": float(n),
         "parse_rate": sum(r["parsed"] for r in results) / n,
@@ -38,6 +52,8 @@ def summarize(results: list[dict[str, float]]) -> dict[str, float]:
         "n_violation_tasks": float(sum(1 for r in results if r["total"] > 0)),
         "false_positives_per_task": sum(r["fp"] for r in results) / n,
         "verdict_accuracy": sum(r["verdict_correct"] for r in results) / n,
+        "citation_exact_match": sum(r.get("cfr_correct", 0.0) for r in results) / cfr_total
+        if cfr_total else 1.0,
     }
 
 

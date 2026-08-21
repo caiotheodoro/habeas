@@ -36,6 +36,46 @@ def test_scoring():
     assert r["severity_weighted_recall"] == 0.5
 
 
+def test_citation_exact_match_correct_cfr():
+    v = Violation(type=ViolationType.DOC_EXPIRED, severity=Severity.HIGH,
+                  field="x", observed="o", expected="e",
+                  cfr="8 CFR 274a.2(b)(1)(vi)", correction="")
+    exp = Verdict(verdict="FLAG", violations=[v])
+    predicted = Verdict(verdict="FLAG", violations=[v])
+    r = score_predictions(exp, predicted)
+    assert r["cfr_correct"] == 1.0 and r["cfr_total"] == 1.0
+    assert summarize([r])["citation_exact_match"] == 1.0
+
+
+def test_citation_exact_match_wrong_cfr_still_counts_as_caught():
+    v_exp = Violation(type=ViolationType.DOC_EXPIRED, severity=Severity.HIGH,
+                      field="x", observed="o", expected="e",
+                      cfr="8 CFR 274a.2(b)(1)(vi)", correction="")
+    v_pred = v_exp.model_copy(update={"cfr": "8 CFR 274a.2(b)(1)(ii)"})
+    exp = Verdict(verdict="FLAG", violations=[v_exp])
+    predicted = Verdict(verdict="FLAG", violations=[v_pred])
+    r = score_predictions(exp, predicted)
+    # Type+severity still matched (counts toward severity_weighted_recall),
+    # but the citation itself is wrong — must not count as a citation match.
+    assert r["caught"] == r["total"]
+    assert r["cfr_correct"] == 0.0 and r["cfr_total"] == 1.0
+    assert summarize([r])["citation_exact_match"] == 0.0
+
+
+def test_citation_exact_match_denominator_excludes_missed_and_false_positive_violations():
+    v_exp = Violation(type=ViolationType.DOC_EXPIRED, severity=Severity.HIGH,
+                      field="x", observed="o", expected="e", cfr="cfr-a", correction="")
+    v_fp = Violation(type=ViolationType.TIMELINESS, severity=Severity.MEDIUM,
+                     field="y", observed="o", expected="e", cfr="cfr-b", correction="")
+    exp = Verdict(verdict="FLAG", violations=[v_exp])
+    # Predicted misses v_exp entirely and adds an unrelated false positive —
+    # neither has a "caught" instance, so the citation denominator is 0.
+    predicted = Verdict(verdict="FLAG", violations=[v_fp])
+    r = score_predictions(exp, predicted)
+    assert r["cfr_total"] == 0.0 and r["cfr_correct"] == 0.0
+    assert summarize([r])["citation_exact_match"] == 1.0  # no denom -> vacuous 1.0, not 0
+
+
 def test_deterministic_same_seed():
     rng1, rng2 = random.Random(123), random.Random(123)
     t1 = generate.task(rng1, seed=7, n_violations=2)
