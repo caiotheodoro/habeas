@@ -8,6 +8,7 @@ import re
 from pydantic import BaseModel, Field
 
 from habeas_forge.schema import Severity, Verdict, Violation, ViolationType
+from habeas_forge.verify import DOC_LIST, VALID_CATEGORIES, VALID_EDITIONS, _SEV
 
 
 class ViolationOut(BaseModel):
@@ -40,6 +41,37 @@ class VerdictOut(BaseModel):
 # sync with habeas_forge.schema.
 _TYPE_LIST = "|".join(t.value for t in ViolationType)
 _SEVERITY_LIST = "|".join(s.value for s in Severity)
+
+# Fixed rules reference: several of forge's oracle rules (verify.py) are
+# static lookup tables, not context-dependent judgment calls — severity
+# per violation type, valid edition dates, valid habeasation categories,
+# and the document->List mapping. A real eval on the trained SFT model
+# found it substitutes its own "common sense" severity for exactly the
+# types where the oracle's fixed severity is counterintuitive
+# (CATEGORY_MISMATCH/FIELD_INCOMPLETE oracle=MEDIUM, model always
+# guessed HIGH; DATA_INCONSISTENT oracle=LOW, model always guessed
+# MEDIUM — 100% consistent across 189 instances, not noise) and misses
+# EDITION_WRONG entirely on forms with an out-of-range edition (99
+# misses despite normal training representation) — both are exactly the
+# failure mode 2026 fine-tuning literature describes for fixed-fact
+# lookup tables: fine-tuning learns patterns well but doesn't reliably
+# memorize precise constants, and explicit rule-injection into the
+# prompt is the documented cheap fix, tried here before any retrain (see
+# docs/DECISIONS.md's "severity-weighted-recall gap" entry). Built
+# directly from verify.py's own constants so this can't drift out of
+# sync with the oracle it's describing.
+_SEV_TABLE = "; ".join(f"{t.value}={s.value}" for t, s in _SEV.items())
+_VALID_EDITIONS_LIST = " or ".join(sorted(VALID_EDITIONS))
+_VALID_CATEGORIES_LIST = "|".join(sorted(VALID_CATEGORIES))
+_DOC_LIST_TABLE = "; ".join(f"{doc}=List {lst}" for doc, lst in DOC_LIST.items())
+_RULES_REFERENCE = (
+    "Fixed rules reference (use exactly, do not infer your own severity): "
+    f"severity per violation type: {_SEV_TABLE}. "
+    f"valid I-9 editions: {_VALID_EDITIONS_LIST}. "
+    f"valid habeasation categories: {_VALID_CATEGORIES_LIST}. "
+    f"document -> List: {_DOC_LIST_TABLE}."
+)
+
 SYSTEM_PROMPT = (
     "You are an I-9 compliance auditor. Given the Form I-9 and presented "
     "documents, emit JSON {\"verdict\": \"PASS\"|\"FLAG\", \"violations\": "
@@ -47,6 +79,7 @@ SYSTEM_PROMPT = (
     "M-274 Handbook and 8 CFR 274a.2. "
     f"type must be exactly one of: {_TYPE_LIST}. "
     f"severity must be exactly one of: {_SEVERITY_LIST}. "
+    f"{_RULES_REFERENCE} "
     "Emit only the JSON."
 )
 
