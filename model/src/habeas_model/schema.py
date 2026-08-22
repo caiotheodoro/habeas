@@ -78,42 +78,19 @@ _RULES_REFERENCE = (
     f"document -> List: {_DOC_LIST_TABLE}."
 )
 
-# Decision logic for the *computed/conditional* violation types — the
-# rules reference above covers fixed constants (severity, citation,
-# valid values), but several violation types require applying a rule to
-# form data, not just looking up a constant. A live eval after adding
-# the rules reference alone found TIMELINESS and REMOTE_EXAM_INVALID had
-# become the two largest remaining miss categories — neither is a
-# lookup-table gap (both are already fully covered by the table above);
-# both require multi-step reasoning (business-day arithmetic; a
-# two-flag conditional) the model was never told explicitly, only left
-# to infer from SFT examples. This is a plain-language transcription of
-# `habeas_forge.verify.verify()`'s actual logic (not auto-generated —
-# it's prose, not simple key-value pairs — so it must be kept in sync by
-# hand if that function's rules ever change; every line below has a
-# direct counterpart in `verify()`, checked at the time this was
-# written). See docs/DECISIONS.md's "severity-weighted-recall gap" entry
-# for the eval evidence that motivated this.
-_DECISION_LOGIC = (
-    "Decision logic for computed/conditional violations (apply exactly, "
-    "do not skip steps): "
-    "COMBINATION_INVALID: flag unless the documents include one List A "
-    "document, OR one List B document AND one List C document. "
-    "DOC_EXPIRED: for each List A/B document with an expiration date, "
-    "flag if that date is before the Section 2 date. "
-    "TIMELINESS: count business days (Monday-Friday only, skip Saturday/"
-    "Sunday) from the hire date; flag if the Section 2 date is more than "
-    "3 business days after the hire date. "
-    "REVERIFICATION: flag if the work authorization expiration date is "
-    "before the Section 2 date AND reverification was not recorded. "
-    "REMOTE_EXAM_INVALID: only applies if remote examination was used; "
-    "flag if E-Verify enrollment is false, OR if copies retained is "
-    "false (either condition alone is a flag). "
-    "DATA_INCONSISTENT: flag if the name or date of birth differs "
-    "between Section 1 and Section 2/3. "
-    "FIELD_INCOMPLETE: flag if Section 1 completion is marked false."
-)
-
+# A plain-language "decision logic" block (stating the actual rule for
+# computed/conditional types like TIMELINESS's business-day arithmetic
+# and REMOTE_EXAM_INVALID's two-flag conditional) was tried and reverted
+# — a live eval found it did not move either target metric (TIMELINESS/
+# REMOTE_EXAM_INVALID misses were unchanged) and *regressed* a
+# previously-fully-fixed category (CATEGORY_MISMATCH: 0 misses -> 13).
+# Stating the rule doesn't help if the model can't reliably execute
+# multi-step arithmetic/conditional logic without any reasoning space
+# (this pipeline runs non-thinking per CONTRACTS.md), and the longer,
+# denser prompt diluted reliability elsewhere. Left as an open problem
+# for RLVR (once unblocked) rather than more prompt engineering — see
+# docs/DECISIONS.md's "severity-weighted-recall gap" entry for the full
+# numbers.
 SYSTEM_PROMPT = (
     "You are an I-9 compliance auditor. Given the Form I-9 and presented "
     "documents, emit JSON {\"verdict\": \"PASS\"|\"FLAG\", \"violations\": "
@@ -122,7 +99,6 @@ SYSTEM_PROMPT = (
     f"type must be exactly one of: {_TYPE_LIST}. "
     f"severity must be exactly one of: {_SEVERITY_LIST}. "
     f"{_RULES_REFERENCE} "
-    f"{_DECISION_LOGIC} "
     "Emit only the JSON."
 )
 

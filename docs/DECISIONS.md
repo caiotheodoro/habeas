@@ -1084,3 +1084,56 @@ only with measured evidence.
   broken) even before any retraining — a real, cheap, targeted fix
   instead of the originally-assumed need for RLVR or teacher distillation
   at scale.
+- **User pushed back before committing to the retrain**: "you're not
+  simply committing to 25 hours of GPU without reaching this level" —
+  correctly caught that the retrain-in-flight didn't address a
+  gate-critical gap. README.md's promotion table has "Timeliness/
+  reverification flags: 100%" as its **own separate, strict line**, not
+  folded into severity-weighted recall — and TIMELINESS/REMOTE_EXAM_INVALID
+  were, by then, the two largest remaining miss categories (10 and 9 of
+  180). Killed the in-flight retrain (`habeas-train-0822-1052`) rather
+  than let it finish on an incomplete fix.
+- **Root cause for TIMELINESS/REMOTE_EXAM_INVALID**: confirmed NOT a
+  rendering/legibility issue (`generate.py`'s `render_form` prints hire
+  date, Section 2 date, and both remote-exam booleans as plain text, same
+  font as every correctly-detected field). Hypothesis: both require
+  multi-step logic never stated in the prompt — TIMELINESS needs
+  business-day arithmetic (skip weekends, count 3 days), REMOTE_EXAM_INVALID
+  needs a two-flag OR conditional — versus the rules-reference table's
+  simple constant lookups.
+- **Phase 0c (tested the hypothesis)**: added a plain-language "decision
+  logic" block transcribing every computed/conditional rule from
+  `verify()` (COMBINATION_INVALID, DOC_EXPIRED, TIMELINESS, REVERIFICATION,
+  REMOTE_EXAM_INVALID, DATA_INCONSISTENT, FIELD_INCOMPLETE), tested
+  against the same checkpoint/subsample (no retrain):
+
+  | Metric | Phase 0b (severity+citation) | Phase 0c (+decision logic) |
+  |---|---|---|
+  | severity_weighted_recall | 0.765 | 0.789 |
+  | verdict_accuracy | 0.994 | **0.972 (regressed)** |
+  | false_positives_per_task | 0.217 | **0.261 (regressed)** |
+  | citation_exact_match | 1.000 | 1.000 |
+  | TIMELINESS misses | 10 | **11 — unchanged** |
+  | REMOTE_EXAM_INVALID misses | 9 | **10 — unchanged** |
+  | CATEGORY_MISMATCH misses | 0 (fully fixed) | **13 — regressed back** |
+
+  **Negative result, reported honestly.** The target metrics didn't move
+  at all, and the longer/denser prompt (1643 → 2599 chars) broke a
+  category that was previously fully fixed. Conclusion: stating the rule
+  in prose doesn't help when the model can't reliably execute multi-step
+  arithmetic/conditional logic with zero reasoning space (this pipeline
+  runs non-thinking per CONTRACTS.md's output contract) — this looks like
+  a genuine model-capability gap, not a missing-fact gap, and prompt
+  engineering alone isn't the right tool for it. **Reverted** — `schema.py`
+  no longer includes the decision-logic block; `SYSTEM_PROMPT` is back to
+  exactly Phase 0b's version (severity + citation tables only, verified
+  byte-length match: 1643 chars).
+- **Decision**: proceed to the retrain with Phase 0b's prompt (the best
+  validated configuration found this round), and carry TIMELINESS/
+  REMOTE_EXAM_INVALID forward as an explicitly open problem — the
+  README's own "Timeliness/reverification flags: 100%" gate line will
+  most likely still fail after this retrain. RLVR (once the trl bug is
+  resolved) is the more principled fix for this specific class of gap
+  (verifiable, narrow reward directly on exact type+severity match,
+  versus hoping prompt text alone teaches multi-step reasoning) —
+  flagged, not attempted this round.
