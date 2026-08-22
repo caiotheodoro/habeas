@@ -989,3 +989,36 @@ only with measured evidence.
   the best-performing checkpoint measured so far.
   `checkpoints/sft-teacher-final/` is kept locally for reference/
   possible future analysis but is not promotable given these numbers.
+
+## 2026-08-22 — P4 — Citation exact-match metric + definitive full-golden eval
+- Added `citation_exact_match` to `score_predictions`/`summarize`
+  (`forge/src/habeas_forge/score.py`) — README.md's promotion gate names
+  a >95% citation-accuracy target that was never actually measured before
+  this. Denominator is caught-violation-instance count (a miss or false
+  positive has no citation to score); vacuously 1.0 when nothing was
+  caught, matching `severity_weighted_recall`'s own no-denominator
+  convention. 3 new tests (`forge/tests/test_forge.py`).
+- **Full 1000-task golden eval** (not a subsample this time) of
+  `checkpoints/sft-final` on `habeas-eval-0821-0943` (A100 preemptible,
+  survived zero preemptions this run):
+
+  | Metric | 150-task subsample (2026-08-20) | **Full 1000 (definitive)** |
+  |---|---|---|
+  | parse_rate | 0.993 | **1.000** |
+  | verdict_accuracy | 0.927 | **0.931** |
+  | severity_weighted_recall | 0.615 | **0.614** |
+  | false_positives_per_task | 0.313 | **0.251** |
+  | citation_exact_match | (not measured) | **0.915** |
+
+  The 150-task subsample tracked the full 1000 closely on every
+  overlapping metric (largest gap: false_positives_per_task, 0.313 vs
+  0.251 — the subsample happened to be a bit noisier there, not
+  systematically biased). Confirms `severity_weighted_recall` (61.4%) is
+  the real, stable weak point, not a small-sample artifact — this is the
+  metric a future RLVR or better-distillation pass needs to move.
+  `citation_exact_match` (91.5%) is decent but below README's >95% gate.
+  Raw per-task results: `data/eval-results-sft-golden-full.jsonl`
+  (gitignored).
+- This is now the **definitive, promotion-gate-comparable number** for
+  `checkpoints/sft-final` — supersedes the 150-task subsample figure
+  everywhere it's cited (docs/BENCHMARK.md, docs/HANDOFF.md updated).

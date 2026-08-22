@@ -81,17 +81,26 @@ docs/     DECISIONS.md, BENCHMARK.md (report template), HANDOFF.md,
   Final `train_loss≈0.0103`, `train_runtime=9389s`. Adapter pulled to local
   `checkpoints/sft-final/` (986MB, gitignored); instance deleted. See
   DECISIONS.md's "Real SFT run COMPLETE" entry.
-- **P4 SFT eval: DONE ✓ (2026-08-20)** — 150/1000 golden-set subsample on
-  `habeas-eval-0819-2225` (A100, deleted after):
-  `parse_rate=0.993, verdict_accuracy=0.927,
-  severity_weighted_recall=0.615, false_positives_per_task=0.313`. Two
-  live bugs fixed in the process (`local_provider.py`'s
+- **P4 SFT eval: DONE ✓, definitive full-golden number (2026-08-22)** —
+  full 1000-task golden set on `habeas-eval-0821-0943` (A100, deleted
+  after, zero preemptions): `parse_rate=1.000, verdict_accuracy=0.931,
+  severity_weighted_recall=0.614, false_positives_per_task=0.251,
+  citation_exact_match=0.915`. Supersedes the earlier 150-task subsample
+  (which tracked closely — confirms the weak point, severity-weighted
+  recall, is real and stable, not sample noise). Two live bugs fixed
+  getting the eval pipeline working in the first place (`local_provider.py`'s
   `apply_chat_template` call — images must be inline in content blocks,
   not an `images=` kwarg; and `enable_thinking=False` must be passed
   explicitly or Qwen3's template defaults to CoT-prose output). Good
-  verdict calibration, weak violation-type precision — see DECISIONS.md
-  for the full interpretation. This is the target RLVR is meant to
-  improve, not a sign the SFT run needs redoing.
+  verdict calibration and near-perfect format compliance; weak
+  violation-type precision (61.4%) and below-target citation accuracy
+  (91.5% vs README's >95% gate) — see DECISIONS.md for full numbers.
+  This is the target RLVR/better-distillation is meant to improve, not a
+  sign the SFT run needs redoing. Also tried teacher distillation as an
+  alternative lever — **negative result** (quota-limited to 399/1597
+  records, worse on every metric, confounded by data-scale mismatch —
+  see DECISIONS.md's "Teacher distillation attempted" entry). Current
+  best artifact remains `checkpoints/sft-final/` (oracle-only).
 
 ## Next actions
 
