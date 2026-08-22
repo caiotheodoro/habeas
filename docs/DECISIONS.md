@@ -1022,3 +1022,65 @@ only with measured evidence.
 - This is now the **definitive, promotion-gate-comparable number** for
   `checkpoints/sft-final` — supersedes the 150-task subsample figure
   everywhere it's cited (docs/BENCHMARK.md, docs/HANDOFF.md updated).
+
+## 2026-08-22 — P4 — Root-cause analysis + rules-reference prompt fix (Phase 0/0b)
+- User asked for a deep, SOTA-informed dive into closing the
+  severity-weighted-recall gap (61.4% vs the >95% promotion target)
+  rather than another blind RLVR/distillation attempt. Free error
+  analysis on the already-collected full-golden eval results
+  (`data/eval-results-sft-golden-full.jsonl`) found the gap was far more
+  tractable than assumed:
+  - **189/436 missed instances (43%) were a single, 100%-consistent
+    severity-inversion bug**, not a detection failure — the model
+    correctly identifies the violation type but substitutes its own
+    "common sense" severity for the oracle's fixed per-type constant:
+    CATEGORY_MISMATCH/FIELD_INCOMPLETE (oracle=MEDIUM, model always
+    guessed HIGH, 79/79 and 32/32) and DATA_INCONSISTENT (oracle=LOW,
+    model always guessed MEDIUM, 78/78). Confirmed against `verify.py`'s
+    `_SEV` dict: severity here is a static lookup table, not
+    context-dependent.
+  - **99/436 (23%) were EDITION_WRONG true misses** despite normal
+    training representation (168/1597 tasks) — `VALID_EDITIONS =
+    {"2023-08-01", "2025-01-20"}` is an external fact never stated in
+    `SYSTEM_PROMPT`, purely inferable from training examples.
+  - 2026 fine-tuning literature confirms this exact failure mode:
+    fine-tuning learns patterns well but doesn't reliably memorize
+    precise lookup-table facts; explicit rule-injection into the prompt
+    is the documented cheap fix, cheaper than any retrain.
+- **Phase 0** (severity table only, injected into `SYSTEM_PROMPT`, tested
+  against the already-trained `checkpoints/sft-final` — no retrain) on a
+  180-task subsample weighted toward the 4 problem types
+  (`data/golden-targeted.jsonl` — 150 tasks containing at least one of
+  CATEGORY_MISMATCH/DATA_INCONSISTENT/FIELD_INCOMPLETE/EDITION_WRONG +
+  30 other tasks for baseline signal):
+  `severity_weighted_recall=0.855` (vs 0.614 full-golden baseline),
+  `verdict_accuracy=0.994`, `false_positives_per_task=0.183`. Real, large
+  improvement — but `citation_exact_match` dropped to `0.559` (vs 0.915
+  full-golden baseline): the newly-caught instances (thanks to the
+  severity fix) still had un-stated citations for the model to guess at.
+- **Root cause of the citation regression**: every violation type also
+  fires from exactly one fixed CFR/M-274 citation (confirmed by reading
+  every `_v()` call site in `verify.py` — `REMOTE_EXAM_INVALID`'s two
+  branches even share the same citation) — same failure mode as
+  severity, just not caught until severity-matching exposed it. Refactored
+  `verify.py` to expose `TYPE_CFR: dict[ViolationType, str]` (was inline
+  literal strings duplicated across call sites) and added it to
+  `SYSTEM_PROMPT` alongside the severity table. Zero behavior change to
+  `verify()` itself (forge tests green, same 15/15 before and after).
+- **Phase 0b** (severity + citation tables, same checkpoint, same
+  180-task subsample):
+  `severity_weighted_recall=0.765` (still +15pts over the 0.614
+  baseline, though a real dip from Phase 0's 0.855 — the longer prompt
+  traded a little severity precision for citation precision, an honest
+  tradeoff worth noting, not spun away), `citation_exact_match=1.000`
+  (up from 0.559, and above the 0.915 full-golden baseline),
+  `verdict_accuracy=0.994`, `false_positives_per_task=0.217`. Raw
+  results: `data/eval-results-phase0b-targeted.jsonl`.
+- **Decision: proceed to Phase 1** — rebuild the SFT training corpus
+  with this prompt baked into every training example's system turn (not
+  just used at inference), then retrain from scratch and re-evaluate on
+  the full 1000-task golden set. Both Phase 0 and 0b passed the
+  go/no-go bar (large gains on the target metric, no metric catastrophically
+  broken) even before any retraining — a real, cheap, targeted fix
+  instead of the originally-assumed need for RLVR or teacher distillation
+  at scale.
